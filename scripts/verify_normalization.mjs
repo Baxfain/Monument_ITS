@@ -236,7 +236,8 @@ const changedPavementMeshes = [];
 const ranges = { min: Infinity, max: -Infinity };
 let maxWorldRestorationError = 0;
 let floatOffset = 0;
-const changedPavementName = /^(?:SquarePavingApron|CircularPavingApron|ApronTileSurfaces|ApronGroutSurface|ApronSide(?:North|South|East|West))$/;
+const changedPavementName = /^(?:SquarePavingApron|ApronGrout(?:NorthSouth|EastWest)\d+|ApronCorner(?:NorthEast|NorthWest|SouthEast|SouthWest)|ApronSide(?:North|South|East|West))$/;
+const isApronSurfaceName = (name) => changedPavementName.test(name);
 const stablePath = (path) => path.replace(/\[\d+\]/g, "");
 const isChangedFootPavementPath = (path) => {
   const normalizedPath = stablePath(path);
@@ -292,7 +293,7 @@ function compareLiveScene(node, parentWorld, path) {
 compareLiveScene(scene, Mat4.identity(), "scene");
 assert.equal(unchangedMeshes.length, baselineMeshesByPath.size, "all unaffected meshes match the independent pre-change snapshot");
 assert.equal(comparedBaselinePaths.size, baselineMeshesByPath.size, "every unaffected baseline mesh is compared once");
-assert.equal(changedPavementMeshes.length, 3, "only the circular apron and its clipped tile/grout surfaces changed");
+assert.equal(changedPavementMeshes.length, 19, "only the square apron, grout lines, and triangular accents changed");
 assert.ok(maxWorldRestorationError < tolerance, `all unaffected world vertices match pre-change geometry within ${tolerance}, max error ${maxWorldRestorationError}`);
 
 const collision = new CollisionWorld(scene, CONFIG.camera);
@@ -345,16 +346,13 @@ for (let index = 0; index < baselineIndex.support.supportProbes.length; index +=
   const before = baselineIndex.support.supportProbes[index];
   const after = actualSupport.supportProbes[index];
   if (before.surface?.name === after.surface?.name) continue;
-  const equalHeightEntranceTie = before.label.startsWith("threshold")
-    && before.surface?.name === "EntranceThresholdLip"
-    && after.surface?.name === "OuterPavingFieldTiles";
-  const equalHeightCircularApronTie = before.label === "monument-front"
-    && before.surface?.name?.startsWith("ApronSide")
-    && ["ApronTileSurfaces", "ApronGroutSurface"].includes(after.surface?.name);
+  const equalHeightApronTie = before.label === "monument-front"
+    && isApronSurfaceName(before.surface?.name ?? "")
+    && isApronSurfaceName(after.surface?.name ?? "");
   assert.ok(
-    (equalHeightEntranceTie || equalHeightCircularApronTie)
+    equalHeightApronTie
       && Math.abs(before.surface.y - after.surface.y) <= 1e-5,
-    `${before.label} keeps its support height except for documented equal-height pavement surface ties`,
+    `${before.label} keeps its support height except for the documented equal-height apron tie`,
   );
   supportSurfaceTies.push({ label: before.label, before: before.surface, after: after.surface });
 }

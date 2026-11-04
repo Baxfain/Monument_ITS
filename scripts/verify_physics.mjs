@@ -93,52 +93,42 @@ near(crouchDistance, CONFIG.camera.walkingSpeed * CONFIG.camera.crouchMultiplier
 near(crouch.eyeHeight, CONFIG.camera.crouchEyeHeight, 0.002, "crouch lowers eye height smoothly");
 
 const plaza = CONFIG.plaza;
-const roadY = plaza.entrance.roadTopY;
+const groundY = plaza.groundTopY;
 const paverY = plaza.paverTopY;
 const soilY = CONFIG.plants.soilSurfaceY;
 const lawnY = plaza.islandLawnTopY;
-const roadSupport = supportAt(-8.79, 4);
-near(roadSupport.y, roadY, 0.002, "dark roadway blocks support the camera at road height");
-const soilSupport = supportAt(-6.0, 6.1);
-near(soilSupport.y, soilY, 0.002, "a separate soil pocket supports the camera at its lowered bed height");
-const lawnSupport = supportAt(5.3, -5.2);
+const outsidePlazaSupport = supportAt(0, plaza.outerPavingRadius + 1);
+near(outsidePlazaSupport.y, groundY, 0.002, "grass supports the camera outside the circular plaza");
+assert.equal(outsidePlazaSupport.name, "GroundPlane", "no tiled surface remains outside the circular plaza");
+const soilSupport = supportAt(5.15, 0);
+near(soilSupport.y, soilY, 0.002, "a rectangular side bed supports the camera on its soil");
+const frontBed = CONFIG.plants.plantingPockets.find((pocket) => pocket.name.startsWith("FrontArcSoilBed"));
+const rearBed = CONFIG.plants.plantingPockets.find((pocket) => pocket.name.startsWith("RearArcSoilBed"));
+const frontArcSupport = supportAt(...frontBed.clusters[0].position);
+const rearArcSupport = supportAt(...rearBed.clusters[0].position);
+near(frontArcSupport.y, soilY, 0.002, "a front rectangular planting bed supports the camera on its soil");
+near(rearArcSupport.y, soilY, 0.002, "a rear rectangular planting bed supports the camera on its soil");
+assert.equal(frontArcSupport.name, `${frontBed.name}SoilSurface`);
+assert.equal(rearArcSupport.name, `${rearBed.name}SoilSurface`);
+const lawnSupport = supportAt(3.2, -3.1);
 near(lawnSupport.y, lawnY, 0.002, "the rear-right patchy lawn supports the camera at island height");
-const lawnAnnulusSupport = supportAt(3.8, -4.0);
-near(lawnAnnulusSupport.y, lawnY, 0.002, "the rear-right lawn stays walkable where it crosses the circular paving radius");
-assert.equal(lawnAnnulusSupport.name, "RearRightPatchyLawn", "paving does not take support priority inside the lawn opening");
-
-const curbCrossing = cameraAt(-8.79, 4, Math.PI / 2);
-curbCrossing.update(1, 0, 1.5);
-assert.ok(curbCrossing.position[0] > -6.6, "walking crosses the segmented outer curb from the west road");
+const curbCrossing = cameraAt(-8.79, -3, Math.PI / 2);
+curbCrossing.update(1, 0, 2);
+assert.ok(curbCrossing.position[0] > -6.6, "walking crosses the circular outer curb from the surrounding ground");
 near(curbCrossing.feetY, paverY, 0.01, "the camera settles onto the raised pavers after stepping over the curb");
 
-const lawnPath = world.moveHorizontal(5.3, -5.2, 0.7, 0, {
+const lawnPath = world.moveHorizontal(3.2, -3.1, -0.1, 0, {
   feetY: lawnSupport.y,
   bodyHeight: standingHeight,
   radius,
 });
-near(lawnPath.x, 6.0, 0.004, "grass remains passable across the rear-right lawn");
+near(lawnPath.x, 3.1, 0.004, "grass remains passable across the rear-right lawn");
 near(supportAt(lawnPath.x, lawnPath.z).y, lawnY, 0.002, "lawn traversal keeps continuous support");
 
-const roadPath = cameraAt(-8.79, 0, 0);
-roadPath.update(1, 0, 0.8);
-near(roadPath.position[0], -8.79, 0.003, "road traversal stays in its configured lane");
-near(roadPath.feetY, roadY, 0.01, "road traversal keeps a level road support height");
-
-const thresholdSupport = supportAt(0, plaza.entrance.thresholdCenterZ, 0);
-near(thresholdSupport.y, paverY, 0.002, "the solid entrance lip supports its raised top");
-const rampHighSupport = supportAt(0, plaza.entrance.rampStartZ + 0.01, 0);
-const rampLowSupport = supportAt(0, plaza.entrance.rampEndZ - 0.05, 0);
-assert.ok(rampHighSupport.y < paverY && rampHighSupport.y > roadY, "the ramp leaves the paver height smoothly");
-assert.ok(rampLowSupport.y > roadY - 0.01 && rampLowSupport.y < roadY + 0.03, "the ramp arrives at road height");
-const entranceWalkOut = cameraAt(0, 10.3, Math.PI);
-entranceWalkOut.update(1, 0, 2.2);
-assert.ok(entranceWalkOut.position[2] > 12.7, "the entrance path remains walkable from the island to the road");
-near(entranceWalkOut.feetY, roadY, 0.01, "the downhill entrance transition lands on the roadway");
-const entranceWalkIn = cameraAt(0, 12.6, 0);
-entranceWalkIn.update(1, 0, 2.2);
-assert.ok(entranceWalkIn.position[2] < 10.5, "the entrance path remains walkable from the road onto the island");
-near(entranceWalkIn.feetY, paverY, 0.01, "the uphill entrance transition reaches the paver elevation");
+const outsideGroundPath = cameraAt(0, plaza.outerPavingRadius + 1, Math.PI / 2);
+outsideGroundPath.update(1, 0, 0.8);
+near(outsideGroundPath.position[0], CONFIG.camera.walkingSpeed * 0.8, 0.003, "outside-ground traversal stays on the grass");
+near(outsideGroundPath.feetY, groundY, 0.01, "outside-ground traversal has no road-tile elevation");
 
 const jumper = cameraAt(5, 0);
 const jumpGround = jumper.feetY;
@@ -159,7 +149,7 @@ assert.equal(jumper.jumpQueued, false, "midair repeated press does not queue a s
 assert.ok(airborneHeightChanged, "gravity advances the camera with zero movement input");
 assert.ok(jumpApex > jumpGround + 0.6 && jumpApex < jumpGround + 0.9, "jump apex is bounded by velocity and gravity");
 
-const lawnJumper = cameraAt(5.3, -5.2);
+const lawnJumper = cameraAt(3.2, -3.1);
 const lawnJumpGround = lawnJumper.feetY;
 lawnJumper.update(0, 0, 1 / 120, { jumpPressed: true });
 for (let index = 0; index < 180; index += 1) lawnJumper.update(0, 0, 1 / 120);
@@ -243,17 +233,17 @@ process.stdout.write(JSON.stringify({
   movement: { walkingDistance, diagonalDistance, sprintDistance, crouchDistance },
   jump: { ground: jumpGround, apex: jumpApex, landed: jumper.feetY },
   outerPlazaSupport: {
-    roadY,
+    groundY,
+    outsidePlazaSupport,
     soilY,
+    frontArcSupport,
+    rearArcSupport,
     lawnY,
-    lawnAnnulus: lawnAnnulusSupport,
     paverY,
     curbCrossing: { x: curbCrossing.position[0], feetY: curbCrossing.feetY },
     lawnPath,
     lawnJump: { ground: lawnJumpGround, landed: lawnJumper.feetY },
-    entranceWalkOut: { z: entranceWalkOut.position[2], feetY: entranceWalkOut.feetY },
-    entranceWalkIn: { z: entranceWalkIn.position[2], feetY: entranceWalkIn.feetY },
-    rampSupports: { high: rampHighSupport, low: rampLowSupport },
+    outsideGroundPath: { x: outsideGroundPath.position[0], z: outsideGroundPath.position[2], feetY: outsideGroundPath.feetY },
   },
   monumentStops: [monumentFront.z, monumentRear.z],
   rearTraversal: rearTraversal.z,

@@ -137,9 +137,10 @@ try {
       test.config.camera.collisionRadius,
       test.config.camera.standingBodyHeight,
     );
-    const rampSupports = [10.79, 11.39, 11.99].map((z) => ({
+    const outsideSupports = [[0, 8.5], [8.5, 0], [0, -8.5]].map(([x, z]) => ({
+      x,
       z,
-      surface: test.collisionWorld.findSurface(0, z, test.config.camera.collisionRadius),
+      surface: test.collisionWorld.findSurface(x, z, test.config.camera.collisionRadius),
     }));
     const camera = test.camera;
     camera.reset({ position: [0, 1.58, 2], yaw: 0, pitch: 0 });
@@ -163,7 +164,7 @@ try {
       anchoredLeafRootVertices: anchoredRoots,
       weightedLeafTipVertices: weightedTips,
       safeSpawn,
-      rampSupports,
+      outsideSupports,
       solidCollision,
       canvasSize: [document.querySelector("#scene-canvas").width, document.querySelector("#scene-canvas").height],
       windPaused: test.wind.paused,
@@ -174,7 +175,7 @@ try {
     };
   });
   assert.equal(audit.glVersion.includes("WebGL 2.0"), true);
-  assert.equal(audit.meshNodes, 446);
+  assert.equal(audit.meshNodes, 525);
   assert.equal(audit.uniqueGeometryCount, audit.cachedMeshCount);
   assert.equal(audit.uniqueCpuPositionComponents, audit.gpuPositionComponents);
   assert.deepEqual(audit.objectSpaceRange, [-1, 1]);
@@ -185,11 +186,11 @@ try {
   assert.equal(audit.windTime, 0);
   assert.equal(audit.safeSpawn.x, 0);
   assert.equal(audit.safeSpawn.z, 7.2);
-  assert.deepEqual(audit.rampSupports.map(({ surface }) => surface?.name), [
-    "EntranceAccessRamp", "EntranceAccessRamp", "EntranceAccessRamp",
+  assert.deepEqual(audit.outsideSupports.map(({ surface }) => surface?.name), [
+    "GroundPlane", "GroundPlane", "GroundPlane",
   ]);
-  audit.rampSupports.forEach(({ surface }, index) => {
-    assert.ok(Math.abs(surface.y - [0.12000003459055997, 0.07800003719826294, 0.008000041544434821][index]) < 0.0001);
+  audit.outsideSupports.forEach(({ surface }) => {
+    assert.ok(Math.abs(surface.y + 0.04) < 0.0001);
   });
   assert.ok(audit.solidCollision.position[2] > 0.6 && audit.solidCollision.position[2] < 0.9);
   assert.ok(audit.solidCollision.feetY > 0.25 && audit.solidCollision.feetY < 0.4);

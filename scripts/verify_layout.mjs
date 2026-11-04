@@ -99,13 +99,13 @@ function geometryCoversXZ(geometry, x, z, objectToConstruction = Mat4.identity()
     const maxX = Math.max(a[0], b[0], c[0]);
     const minZ = Math.min(a[1], b[1], c[1]);
     const maxZ = Math.max(a[1], b[1], c[1]);
-    if (x <= minX + tolerance || x >= maxX - tolerance || z <= minZ + tolerance || z >= maxZ - tolerance) continue;
+    if (x < minX - tolerance || x > maxX + tolerance || z < minZ - tolerance || z > maxZ + tolerance) continue;
     const cross = (p, q, r) => (q[0] - p[0]) * (r[1] - p[1]) - (q[1] - p[1]) * (r[0] - p[0]);
     const first = cross(a, b, [x, z]);
     const second = cross(b, c, [x, z]);
     const third = cross(c, a, [x, z]);
-    if ((first > tolerance && second > tolerance && third > tolerance)
-      || (first < -tolerance && second < -tolerance && third < -tolerance)) return true;
+    if ((first >= -tolerance && second >= -tolerance && third >= -tolerance)
+      || (first <= tolerance && second <= tolerance && third <= tolerance)) return true;
   }
   return false;
 }
@@ -124,34 +124,35 @@ function triangleAreaXZ(geometry) {
   return area;
 }
 
-const roadProbeSegment = CONFIG.plaza.roadway.segments[0];
-const [roadWidth, roadDepth] = roadProbeSegment.size;
-const roadColumns = Math.max(1, Math.round(roadWidth / CONFIG.plaza.roadway.blockSize[0]));
-const roadRows = Math.max(1, Math.round(roadDepth / CONFIG.plaza.roadway.blockSize[1]));
-const roadGrid = createApronGridGeometry(
-  [roadWidth, 1, roadDepth],
-  roadColumns - 1,
-  CONFIG.plaza.roadway.jointWidth,
-  roadRows - 1,
+const gridProbeWidth = 2.42;
+const gridProbeDepth = 14.86;
+const gridColumns = 5;
+const gridRows = 44;
+const gridJointWidth = 0.018;
+const grid = createApronGridGeometry(
+  [gridProbeWidth, 1, gridProbeDepth],
+  gridColumns - 1,
+  gridJointWidth,
+  gridRows - 1,
 );
-const expectedRoadTileArea = (roadWidth - (roadColumns - 1) * CONFIG.plaza.roadway.jointWidth)
-  * (roadDepth - (roadRows - 1) * CONFIG.plaza.roadway.jointWidth);
-const measuredRoadTileArea = triangleAreaXZ(roadGrid.tiles) * roadWidth * roadDepth;
-const expectedRoadGroutArea = roadWidth * roadDepth - expectedRoadTileArea;
-const measuredRoadGroutArea = triangleAreaXZ(roadGrid.grout) * roadWidth * roadDepth;
-near(measuredRoadTileArea, expectedRoadTileArea, "rectangular roadway tile area accounts for every row and column joint", 1e-5);
+const expectedGridTileArea = (gridProbeWidth - (gridColumns - 1) * gridJointWidth)
+  * (gridProbeDepth - (gridRows - 1) * gridJointWidth);
+const measuredGridTileArea = triangleAreaXZ(grid.tiles) * gridProbeWidth * gridProbeDepth;
+const expectedGridGroutArea = gridProbeWidth * gridProbeDepth - expectedGridTileArea;
+const measuredGridGroutArea = triangleAreaXZ(grid.grout) * gridProbeWidth * gridProbeDepth;
+near(measuredGridTileArea, expectedGridTileArea, "grid tile area accounts for every row and column joint", 1e-5);
 near(
-  measuredRoadGroutArea,
-  expectedRoadGroutArea,
-  "rectangular roadway grout covers the full complement of tile area",
+  measuredGridGroutArea,
+  expectedGridGroutArea,
+  "grid grout covers the full complement of tile area",
   1e-5,
 );
-near(measuredRoadTileArea + measuredRoadGroutArea, roadWidth * roadDepth, "roadway tiles and grout cover the full rectangular footprint", 1e-5);
-const lastRoadJointZ = -0.5 + (roadRows - 1) / roadRows;
-const finalRoadTileCenterZ = -0.5 + (roadRows - 0.5) / roadRows;
-assert.ok(geometryCoversXZ(roadGrid.grout, 0.05, lastRoadJointZ), "the final second-axis roadway grout strip is present");
-assert.ok(geometryCoversXZ(roadGrid.tiles, 0.05, finalRoadTileCenterZ), "the final roadway tile row reaches the segment edge");
-assert.ok(!geometryCoversXZ(roadGrid.grout, 0.05, finalRoadTileCenterZ), "the final roadway tile row remains tile rather than grout");
+near(measuredGridTileArea + measuredGridGroutArea, gridProbeWidth * gridProbeDepth, "grid tiles and grout cover the full rectangular footprint", 1e-5);
+const lastGridJointZ = -0.5 + (gridRows - 1) / gridRows;
+const finalGridTileCenterZ = -0.5 + (gridRows - 0.5) / gridRows;
+assert.ok(geometryCoversXZ(grid.grout, 0.05, lastGridJointZ), "the final second-axis grid grout strip is present");
+assert.ok(geometryCoversXZ(grid.tiles, 0.05, finalGridTileCenterZ), "the final grid tile row reaches the segment edge");
+assert.ok(!geometryCoversXZ(grid.grout, 0.05, finalGridTileCenterZ), "the final grid tile row remains tile rather than grout");
 
 const polygonProbeOuter = [[-5, -5], [5, -5], [5, 5], [-5, 5]];
 const polygonFieldProbes = [
@@ -208,86 +209,38 @@ assert.ok(findNode(scene, "ParkTree01"), "campus trees remain in the scene");
 assert.ok(findNode(scene, "WhiteParkBench01"), "campus benches remain in the scene");
 assert.ok(findNode(scene, "Monument"), "monument remains in the scene");
 assert.ok(findNode(scene, "GroundPlane"), "map boundary remains in the scene");
-const circularApron = findNode(plaza, "CircularPavingApron");
-assert.ok(circularApron?.geometry, "the monument foot has a separate circular paved apron");
-assert.equal(findNode(plaza, "SquarePavingApron"), null, "the former square apron is absent");
-assert.equal(plaza.children.filter((node) => node.name.startsWith("ApronSide")).length, 0, "the former square apron triangles are absent");
-assert.equal(circularApron.collision, null, "the circular apron backing does not create hidden top support");
-assert.deepEqual(circularApron.material, baselineConfig.materials.tile, "the circular apron keeps the tile material");
+const squareApron = findNode(plaza, "SquarePavingApron");
+assert.ok(squareApron?.geometry, "the monument foot has a square tiled apron");
+assert.equal(findNode(plaza, "CircularPavingApron"), null, "the circular monument-foot apron is absent");
+assert.deepEqual(squareApron.scale, baselineConfig.plaza.tilePadSize, "the apron keeps its original square footprint");
+assert.deepEqual(squareApron.collision, { surface: true }, "the square apron remains walkable");
+assert.deepEqual(squareApron.material, baselineConfig.materials.tile, "the square apron keeps the tile material");
+const squareApronBounds = localBounds(squareApron);
+near(squareApronBounds.minX, -baselineConfig.plaza.tilePadSize[0] / 2, "the square apron reaches its west edge");
+near(squareApronBounds.maxX, baselineConfig.plaza.tilePadSize[0] / 2, "the square apron reaches its east edge");
+near(squareApronBounds.minZ, -baselineConfig.plaza.tilePadSize[2] / 2, "the square apron reaches its south edge");
+near(squareApronBounds.maxZ, baselineConfig.plaza.tilePadSize[2] / 2, "the square apron reaches its north edge");
 
-const apronRadius = baselineConfig.plaza.tilePadRadius;
-const apronPositions = constructionPositions(circularApron);
-const apronBoundaryRadii = [];
-for (let index = 0; index < apronPositions.length; index += 3) {
-  const radius = Math.hypot(apronPositions[index], apronPositions[index + 2]);
-  assert.ok(radius <= apronRadius + tolerance, "the apron geometry stays within its circular footprint");
-  if (radius >= apronRadius - tolerance * 4) apronBoundaryRadii.push(radius);
+const apronGrout = plaza.children.filter((node) => node.name.startsWith("ApronGrout"));
+assert.equal(apronGrout.length, baselineConfig.plaza.tileGroutCount * 2, "square tiles retain crossing grout lines");
+for (const joint of apronGrout) {
+  assert.deepEqual(joint.collision, { surface: true }, `${joint.name} remains walkable`);
+  assert.deepEqual(joint.material, baselineConfig.materials.grout, `${joint.name} keeps the grout material`);
 }
-assert.ok(apronBoundaryRadii.length >= 128, "the apron has a sampled round outer boundary");
-near(Math.min(...apronBoundaryRadii), apronRadius, "the apron circular boundary reaches its configured radius");
-near(Math.max(...apronBoundaryRadii), apronRadius, "the apron boundary does not flare into square corners");
-assert.ok(geometryCoversXZ(circularApron.geometry, 0.9, 0.3, circularApron.objectToConstruction), "the circular apron covers a point inside its round footprint");
-assert.ok(!geometryCoversXZ(circularApron.geometry, 1.25, 1.25, circularApron.objectToConstruction), "the circular apron leaves diagonal gravel outside its round footprint");
-const apronBounds = localBounds(circularApron);
-near(apronBounds.maxX, apronRadius, "the apron has a circular east extent");
-near(apronBounds.minX, -apronRadius, "the apron has a circular west extent");
-near(apronBounds.maxZ, apronRadius, "the apron has a circular north extent");
-near(apronBounds.minZ, -apronRadius, "the apron has a circular south extent");
 
-const apronTiles = findNode(plaza, "ApronTileSurfaces");
-const apronGrout = findNode(plaza, "ApronGroutSurface");
-assert.ok(apronTiles?.geometry && apronGrout?.geometry, "the circular apron keeps its separate tile and grout surfaces");
-for (const surface of [apronTiles, apronGrout]) {
-  assert.deepEqual(surface.collision, { surface: true }, `${surface.name} remains walkable`);
-  const positions = constructionPositions(surface);
-  for (let index = 0; index < positions.length; index += 3) {
-    assert.ok(Math.hypot(positions[index], positions[index + 2]) <= apronRadius + tolerance, `${surface.name} is clipped to the circle`);
-  }
+const apronSideTriangles = plaza.children.filter((node) => node.name.startsWith("ApronSide"));
+assert.equal(apronSideTriangles.length, 4, "four dark triangles line the sides of the square apron");
+for (const triangle of apronSideTriangles) {
+  assert.ok(triangle.geometry, `${triangle.name} has triangular geometry`);
+  assert.equal(triangle.geometry.vertexCount, 24, `${triangle.name} keeps its solid triangular prism`);
+  assert.deepEqual(triangle.collision, { surface: true }, `${triangle.name} remains walkable`);
+  assert.deepEqual(triangle.material, baselineConfig.materials.tileAccent, `${triangle.name} keeps the dark accent`);
 }
-assert.ok(geometryCoversXZ(apronTiles.geometry, 0.2, 0.2, apronTiles.objectToConstruction), "clipped paving tiles remain visible within the circular apron");
-assert.ok(!geometryCoversXZ(apronTiles.geometry, 1.25, 1.25, apronTiles.objectToConstruction), "clipped paving tiles do not extend beyond the circular apron");
-near(worldY(scene, apronTiles), baselineConfig.plaza.tilePadY + baselineConfig.plaza.tilePadSize[1] / 2, "tile surfaces remain at the apron top");
-const expectedApronBackingTopOffset = 0.0001;
-const apronBackingPositions = constructionPositions(circularApron);
-let apronBackingBottomY = Infinity;
-let apronBackingTopY = -Infinity;
-for (let index = 1; index < apronBackingPositions.length; index += 3) {
-  apronBackingBottomY = Math.min(apronBackingBottomY, apronBackingPositions[index]);
-  apronBackingTopY = Math.max(apronBackingTopY, apronBackingPositions[index]);
-}
-apronBackingBottomY += worldY(scene, circularApron);
-apronBackingTopY += worldY(scene, circularApron);
-near(
-  apronBackingBottomY,
-  baselineConfig.plaza.tilePadY - baselineConfig.plaza.tilePadSize[1] / 2,
-  "apron backing keeps its original bottom height",
-);
-for (const surface of [apronTiles, apronGrout]) {
-  const positions = constructionPositions(surface);
-  let surfaceTopY = -Infinity;
-  for (let index = 1; index < positions.length; index += 3) {
-    surfaceTopY = Math.max(surfaceTopY, positions[index]);
-  }
-  const worldSurfaceTopY = worldY(scene, surface) + surfaceTopY;
-  assert.ok(apronBackingTopY < worldSurfaceTopY, `${surface.name} is above the apron backing top`);
-  near(
-    worldSurfaceTopY - apronBackingTopY,
-    expectedApronBackingTopOffset,
-    `${surface.name} clears the apron backing by the intended offset`,
-  );
-}
-const tilePositions = constructionPositions(apronTiles);
-for (let index = 0; index < apronTiles.geometry.vertexCount; index += 1) {
-  near(
-    apronTiles.geometry.uvs[index * 2],
-    tilePositions[index * 3] + baselineConfig.plaza.tilePadSize[0] / 2,
-    `apron tile ${index} U coordinate follows restored construction-space X`,
-  );
-  near(
-    apronTiles.geometry.uvs[index * 2 + 1],
-    tilePositions[index * 3 + 2] + baselineConfig.plaza.tilePadSize[2] / 2,
-    `apron tile ${index} V coordinate follows restored construction-space Z`,
-  );
+const apronCornerTiles = plaza.children.filter((node) => node.name.startsWith("ApronCorner"));
+assert.equal(apronCornerTiles.length, 4, "four corner tiles complete the square apron pattern");
+for (const triangle of apronCornerTiles) {
+  assert.equal(triangle.geometry.vertexCount, 3, `${triangle.name} keeps its flat triangular tile`);
+  assert.deepEqual(triangle.material, baselineConfig.materials.tile, `${triangle.name} uses the apron tile material`);
 }
 
 const planting = findNode(scene, "PlantingGroups");
@@ -296,6 +249,68 @@ assert.equal(findNode(scene, "NearFrontPlantingBed"), null, "the former continuo
 const pocketSettings = baselineConfig.plants.plantingPockets;
 const soilPocketNodes = planting.children.filter((node) => pocketSettings.some((pocket) => pocket.name === node.name));
 assert.equal(soilPocketNodes.length, pocketSettings.length, "each configured planting pocket has its own landscape group");
+const frontArcBeds = pocketSettings.filter((pocket) => pocket.name.startsWith("FrontArcSoilBed"));
+const rearArcBeds = pocketSettings.filter((pocket) => pocket.name.startsWith("RearArcSoilBed"));
+assert.equal(frontArcBeds.length, 6, "the front arc has six separate rectangular soil beds");
+assert.equal(rearArcBeds.length, 6, "the rear arc has six separate rectangular soil beds");
+const frontClusters = frontArcBeds.flatMap((bed) => bed.clusters);
+const rearClusters = rearArcBeds.flatMap((bed) => bed.clusters);
+assert.equal(frontClusters.length, 6, "the front arc keeps six plant clusters");
+assert.equal(rearClusters.length, 6, "the rear arc keeps six plant clusters");
+const polygonArea = (contour) => Math.abs(contour.reduce((sum, [x, z], index) => {
+  const [nextX, nextZ] = contour[(index + 1) % contour.length];
+  return sum + x * nextZ - nextX * z;
+}, 0)) / 2;
+const frontSoilArea = frontArcBeds.reduce((sum, bed) => sum + polygonArea(bed.contour), 0);
+const rearSoilArea = rearArcBeds.reduce((sum, bed) => sum + polygonArea(bed.contour), 0);
+assert.ok(frontSoilArea < rearSoilArea * 0.6, "the front soil area stays much smaller than the rear beds");
+assert.ok(frontClusters.every((cluster) => cluster.height[1] <= 0.5), "front plants remain very short and compact");
+assert.ok(rearClusters.every((cluster) => cluster.height[1] <= 0.7 && cluster.species === "rust"), "rear plants stay short and use the distinct russet species");
+assert.ok(rearClusters.every((cluster) => cluster.height[0] > frontClusters[0].height[1]), "rear plants are visibly taller than front plants");
+const curbInnerRadius = baselineConfig.plaza.outerPavingRadius - baselineConfig.plaza.outerCircularCurb.width / 2;
+for (const bed of [...frontArcBeds, ...rearArcBeds]) {
+  const forwardSign = bed.name.startsWith("FrontArcSoilBed") ? 1 : -1;
+  for (const [index, [x, z]] of bed.contour.entries()) {
+    const radius = Math.hypot(x, z);
+    assert.ok(radius < curbInnerRadius - 0.15, `${bed.name} soil stops before the dark outer curb`);
+    assert.ok(z * forwardSign > 0, `${bed.name} soil stays on its side of the monument`);
+    const next = bed.contour[(index + 1) % bed.contour.length];
+    assert.ok(Math.hypot(next[0] - x, next[1] - z) < 1, `${bed.name} remains a compact rectangular soil patch`);
+  }
+}
+const sidePlantBlocks = pocketSettings.filter((pocket) => pocket.name.startsWith("SidePlantBlock"));
+assert.equal(sidePlantBlocks.length, 6, "three rectangular soil beds remain on each monument side");
+assert.equal(sidePlantBlocks.filter((block) => block.contour.reduce((sum, [x]) => sum + x, 0) > 0).length, 3, "three separated plant blocks sit on the east side");
+assert.equal(sidePlantBlocks.filter((block) => block.contour.reduce((sum, [x]) => sum + x, 0) < 0).length, 3, "three separated plant blocks sit on the west side");
+for (const block of sidePlantBlocks) {
+  assert.equal(block.contour.length, 4, `${block.name} soil has a rectangular footprint`);
+  assert.equal(block.clusters.length, 1, `${block.name} keeps its own separated plant cluster`);
+  assert.equal(block.shape, "rectangle", `${block.name} is soil rather than a floor motif`);
+  const edges = block.contour.map(([x, z], index) => {
+    const [nextX, nextZ] = block.contour[(index + 1) % block.contour.length];
+    return Math.hypot(nextX - x, nextZ - z);
+  });
+  near(edges[0], block.tangentialWidth, `${block.name} has its configured tangential width`);
+  near(edges[1], block.radialDepth, `${block.name} has its configured radial depth`);
+  near(edges[2], edges[0], `${block.name} keeps parallel rectangular edges`);
+  near(edges[3], edges[1], `${block.name} keeps parallel rectangular edges`);
+}
+const floorFrames = baselineConfig.plaza.plantingFloorFrames;
+assert.equal(floorFrames.length, 4, "trapezoid brick frames sit between the three side beds on both sides");
+for (const frame of floorFrames) {
+  const frameNode = findNode(plaza, frame.name);
+  assert.ok(frameNode?.geometry, `${frame.name} is visible in the paving`);
+  assert.deepEqual(frameNode.material, baselineConfig.materials.tileAccent, `${frame.name} uses the dark brick accent`);
+  assert.ok(frameNode.geometry.vertexCount > 0, `${frame.name} has real raised-frame geometry`);
+  const innerCenter = frame.innerContour.reduce((sum, [x, z]) => [sum[0] + x / 4, sum[1] + z / 4], [0, 0]);
+  assert.ok(!geometryCoversXZ(frameNode.geometry, ...innerCenter, frameNode.objectToConstruction), `${frame.name} leaves its center open as a paving motif`);
+  const frameBandPoint = [
+    frame.contour[0][0] * 0.1 + frame.innerContour[0][0] * 0.9,
+    frame.contour[0][1] * 0.1 + frame.innerContour[0][1] * 0.9,
+  ];
+  assert.ok(geometryCoversXZ(frameNode.geometry, ...frameBandPoint, frameNode.objectToConstruction), `${frame.name} has a continuous brick border`);
+  assert.ok(frame.contour.some(([x, z]) => Math.hypot(x, z) > 5.5), `${frame.name} follows the outer plaza radius`);
+}
 const annularPavingNodes = plaza.children.filter((node) =>
   node.name.startsWith("PaverAnnulusTiles")
   || node.name.startsWith("PaverArcJoint")
@@ -303,12 +318,23 @@ const annularPavingNodes = plaza.children.filter((node) =>
 const outerPavingTiles = findNode(plaza, "OuterPavingFieldTiles");
 const outerPavingGrout = findNode(plaza, "OuterPavingFieldGrout");
 assert.ok(outerPavingTiles?.geometry && outerPavingGrout?.geometry, "the shaped paving field has separate tile and grout surfaces");
-assert.ok(geometryCoversXZ(outerPavingTiles.geometry, 0.32, 9.1, outerPavingTiles.objectToConstruction), "the shaped paving continues along the front entrance path");
+assert.equal(baselineConfig.plaza.outerPavingOutline.length, 128, "the outer paving outline is a closed circular contour");
+for (const [x, z] of baselineConfig.plaza.outerPavingOutline) {
+  near(Math.hypot(x, z), baselineConfig.plaza.outerPavingRadius, "the outer paving outline stays on its circular radius");
+}
+assert.ok(!geometryCoversXZ(outerPavingTiles.geometry, 0, 9.1, outerPavingTiles.objectToConstruction), "outer paving ends at the circular plaza edge");
+const outerTilePositions = constructionPositions(outerPavingTiles);
+for (let index = 0; index < outerTilePositions.length; index += 3) {
+  assert.ok(
+    Math.hypot(outerTilePositions[index], outerTilePositions[index + 2]) <= baselineConfig.plaza.outerPavingRadius + tolerance,
+    "outer paving has no tile vertices outside the circular plaza",
+  );
+}
 const outerFieldBounds = localBounds(outerPavingTiles);
 near(outerFieldBounds.minX, Math.min(...baselineConfig.plaza.outerPavingOutline.map(([x]) => x)), "outer paving field stays inside its west edge");
 near(outerFieldBounds.maxX, Math.max(...baselineConfig.plaza.outerPavingOutline.map(([x]) => x)), "outer paving field stays inside its east edge");
 near(outerFieldBounds.minZ, Math.min(...baselineConfig.plaza.outerPavingOutline.map(([, z]) => z)), "outer paving field stays inside its rear edge");
-near(outerFieldBounds.maxZ, Math.max(...baselineConfig.plaza.outerPavingOutline.map(([, z]) => z)), "outer paving field stays inside its entrance edge");
+near(outerFieldBounds.maxZ, baselineConfig.plaza.outerPavingRadius, "outer paving field stays inside its circular north edge");
 const annulusPaverTiles = annularPavingNodes.filter((node) => node.name.startsWith("PaverAnnulusTiles"));
 assert.equal(annulusPaverTiles.length, baselineConfig.plaza.paverRows, "each configured radial row has its own clipped tile mesh");
 for (const pavingNode of [...annularPavingNodes, outerPavingTiles]) {
@@ -331,35 +357,67 @@ near(worldY(scene, outerPavingGrout), baselineConfig.plaza.paverTopY, "outer pav
 
 let soilRootCount = 0;
 for (const pocket of pocketSettings) {
+  for (const [x, z] of pocket.contour) {
+    assert.ok(Math.hypot(x, z) <= baselineConfig.plaza.outerPavingRadius, `${pocket.name} soil stays inside the circular plaza`);
+    assert.ok(Math.hypot(x, z) < curbInnerRadius - 0.15, `${pocket.name} soil stays before the dark outer curb`);
+  }
+  assert.equal(pocket.shape, "rectangle", `${pocket.name} soil stays rectangular`);
   const bed = findNode(planting, pocket.name);
   const soilBed = findNode(bed, `${pocket.name}SoilSurface`);
   assert.ok(soilBed?.geometry, `${pocket.name} has its own soil surface mesh`);
   assert.deepEqual(soilBed.material, baselineConfig.materials.soil, `${pocket.name} uses the soil material`);
   assert.ok(soilBed.geometry.vertexCount > 0, `${pocket.name} soil surface contains real geometry`);
   const soilPositions = constructionPositions(soilBed);
+  let soilTopArea = 0;
+  for (let index = 0; index < soilBed.geometry.vertexCount; index += 3) {
+    const vertexOffset = index * 3;
+    if (soilBed.geometry.normals[vertexOffset + 1] <= 0.9) continue;
+    const a = soilPositions.subarray(vertexOffset, vertexOffset + 3);
+    const b = soilPositions.subarray(vertexOffset + 3, vertexOffset + 6);
+    const c = soilPositions.subarray(vertexOffset + 6, vertexOffset + 9);
+    soilTopArea += Math.abs((b[0] - a[0]) * (c[2] - a[2]) - (b[2] - a[2]) * (c[0] - a[0])) / 2;
+  }
+  near(soilTopArea, polygonArea(pocket.contour), `${pocket.name} soil completely covers its floor without gaps`);
   const localY = Array.from(
     { length: soilBed.geometry.vertexCount },
     (_, index) => soilPositions[index * 3 + 1],
   );
   near(worldY(scene, soilBed) + Math.max(...localY), baselineConfig.plants.soilSurfaceY, `${pocket.name} soil top supports its roots`);
   near(worldY(scene, soilBed) + Math.min(...localY), baselineConfig.plaza.groundTopY, `${pocket.name} soil base meets the ground`);
+  assert.ok(
+    baselineConfig.plants.soilSurfaceY >= baselineConfig.plaza.paverTopY + 0.025,
+    `${pocket.name} soil cap sits above paving to hide joints beneath the bed`,
+  );
 
-  for (const [clusterIndex, cluster] of pocket.clusters.entries()) {
+  for (const cluster of pocket.clusters) {
     const [x, z] = cluster.position;
-    const group = findNode(bed, `LeafCluster${String(clusterIndex + 1).padStart(2, "0")}`);
-    assert.ok(group, `${pocket.name} cluster ${clusterIndex + 1} is nested in its own pocket`);
-    near(group.position[1], baselineConfig.plants.soilSurfaceY, `${pocket.name} cluster ${clusterIndex + 1} root elevation`);
-    assert.ok(geometryCoversXZ(soilBed.geometry, x, z, soilBed.objectToConstruction), `${pocket.name} soil covers cluster ${clusterIndex + 1} root`);
+    const group = findNode(bed, "LeafCluster01");
+    assert.ok(group, `${pocket.name} cluster is nested in its own pocket`);
+    near(group.position[1], baselineConfig.plants.soilSurfaceY, `${pocket.name} cluster root elevation`);
+    near(group.rotation[1], cluster.rotationY, `${pocket.name} plant orientation follows the circular arc`);
+    assert.ok(geometryCoversXZ(soilBed.geometry, x, z, soilBed.objectToConstruction), `${pocket.name} soil covers its plant root`);
     assert.ok(!geometryCoversXZ(outerPavingTiles.geometry, x, z, outerPavingTiles.objectToConstruction), `${pocket.name} root is an opening in outer paving`);
     assert.ok(!geometryCoversXZ(outerPavingGrout.geometry, x, z, outerPavingGrout.objectToConstruction), `${pocket.name} root is clear of outer paving joints`);
     assert.ok(!annularPavingNodes.some((node) => geometryCoversXZ(node.geometry, x, z, node.objectToConstruction)), `${pocket.name} root is clear of annular tiles and joints`);
     assert.ok(
-      Math.hypot(x, z) - cluster.rootSpread > baselineConfig.plaza.paverOuterRadius,
-      `${pocket.name} root spread stays outside the circular paving band`,
+      cluster.rootSpread <= Math.min(pocket.radialDepth, pocket.tangentialWidth) / 2,
+      `${pocket.name} root spread fits inside its rectangular soil patch`,
+    );
+    assert.ok(
+      Math.hypot(x, z) + cluster.rootSpread + cluster.bend[1] + cluster.width[1] / 2 + baselineConfig.wind.amplitude <= curbInnerRadius,
+      `${pocket.name} leaves and wind stay before the dark outer curb`,
     );
     soilRootCount += 1;
   }
 }
+const rearFirstCluster = findNode(findNode(planting, rearArcBeds[0].name), "LeafCluster01");
+assert.ok(rearFirstCluster.children.length > 0, "the rear bed has visible foliage");
+assert.ok(
+  rearFirstCluster.children.every((leafSet) =>
+    [baselineConfig.materials.leafRust, baselineConfig.materials.leafRustLight].some((material) =>
+      JSON.stringify(leafSet.material) === JSON.stringify(material))),
+  "rear foliage uses russet materials rather than the front bed's gold-green palette",
+);
 
 const lawn = findNode(plaza, "RearRightPatchyLawn");
 assert.ok(lawn?.geometry, "the rear-right lawn has a separate surface mesh");
@@ -368,82 +426,43 @@ const lawnPositions = constructionPositions(lawn);
 const lawnLocalY = Array.from({ length: lawn.geometry.vertexCount }, (_, index) => lawnPositions[index * 3 + 1]);
 near(worldY(scene, lawn) + Math.max(...lawnLocalY), baselineConfig.plaza.islandLawnTopY, "patchy lawn top follows the planting level");
 near(worldY(scene, lawn) + Math.min(...lawnLocalY), baselineConfig.plaza.groundTopY, "patchy lawn base meets the ground");
-const lawnSample = [5.3, -5.2];
-const lawnAnnulusSample = [3.6, -4.1];
+const lawnSample = [3.2, -3.1];
+const lawnAnnulusSample = [3.8, -2.5];
 assert.ok(geometryCoversXZ(lawn.geometry, ...lawnSample, lawn.objectToConstruction), "the patchy lawn covers its configured rear-right sample");
 assert.ok(!geometryCoversXZ(outerPavingTiles.geometry, ...lawnSample, outerPavingTiles.objectToConstruction), "paving leaves a real opening for the patchy lawn");
 assert.ok(!annularPavingNodes.some((node) => geometryCoversXZ(node.geometry, ...lawnSample, node.objectToConstruction)), "annular pavers do not mask the lawn");
 assert.ok(geometryCoversXZ(lawn.geometry, ...lawnAnnulusSample, lawn.objectToConstruction), "the lawn continues into its configured overlap with the circular band");
 assert.ok(!geometryCoversXZ(outerPavingTiles.geometry, ...lawnAnnulusSample, outerPavingTiles.objectToConstruction), "the lawn opening also cuts through the shaped outer field");
 assert.ok(!annularPavingNodes.some((node) => geometryCoversXZ(node.geometry, ...lawnAnnulusSample, node.objectToConstruction)), "annular pavers leave a true opening where the lawn crosses their radius");
+for (const [x, z] of baselineConfig.plaza.lawnFootprint) {
+  assert.ok(Math.hypot(x, z) <= baselineConfig.plaza.outerPavingRadius, "the lawn stays inside the circular plaza");
+}
+for (const [x, z] of baselineConfig.plants.redTuftPositions) {
+  assert.ok(Math.hypot(x, z) + 0.56 <= baselineConfig.plaza.outerPavingRadius, "russet plants and their leaves stay inside the circular plaza");
+}
+for (const [x, z] of baselineConfig.plants.shrubPositions) {
+  assert.ok(Math.hypot(x, z) + 0.9 <= baselineConfig.plaza.outerPavingRadius, "shrubs stay inside the circular plaza");
+}
 
-const curbSegments = plaza.children.filter((node) => node.name.startsWith("OuterRoadsideCurb"));
-assert.ok(curbSegments.length > 80, "the outer roadside curb is built from many short individual segments");
-assert.ok(!curbSegments.some((node) => node.name.startsWith("OuterRoadsideCurb06_")), "the front curb remains open across the entrance");
+const curbSegments = plaza.children.filter((node) => node.name.startsWith("OuterCircularCurb"));
+assert.ok(curbSegments.length > 80, "the circular outer curb follows the plaza edge while leaving the planting beds open");
 for (const segment of curbSegments) {
   assert.deepEqual(segment.material, baselineConfig.materials.outerCurb, `${segment.name} uses the dark outer curb material`);
   assert.deepEqual(segment.collision, { solid: true, surface: true }, `${segment.name} provides solid low-step support`);
 }
+assert.equal(plaza.children.some((node) => node.name.startsWith("Roadway")), false, "no tiled roadway remains outside the plaza");
+assert.equal(findNode(plaza, "EntranceThresholdLip"), null, "the entrance lip is removed");
+assert.equal(findNode(plaza, "EntranceAccessRamp"), null, "the entrance ramp is removed");
 const innerCurb = findNode(plaza, "RaisedCircularCurb");
 assert.ok(innerCurb, "the pale central gravel curb remains a distinct circular feature");
-assert.notDeepEqual(innerCurb.material, baselineConfig.materials.outerCurb, "the inner gravel curb and outer roadside curb use distinct materials");
-const outerCurbTopY = baselineConfig.plaza.outerRoadsideCurb.baseY + baselineConfig.plaza.outerRoadsideCurb.height;
-near(outerCurbTopY - baselineConfig.plaza.entrance.roadTopY, baselineConfig.plaza.outerRoadsideCurb.height, "outer curb rise is measured from the adjacent road");
+assert.notDeepEqual(innerCurb.material, baselineConfig.materials.outerCurb, "the inner gravel curb and outer circular curb use distinct materials");
+const outerCurbTopY = baselineConfig.plaza.outerCircularCurb.baseY + baselineConfig.plaza.outerCircularCurb.height;
+near(outerCurbTopY, baselineConfig.plaza.paverTopY, "outer curb top is flush with the plaza paving");
+near(baselineConfig.plaza.outerCircularCurb.baseY, baselineConfig.plaza.groundTopY, "outer curb starts at the surrounding ground");
 assert.ok(
-  outerCurbTopY - baselineConfig.plaza.entrance.roadTopY <= baselineConfig.camera.maxStepHeight,
+  baselineConfig.plaza.outerCircularCurb.height <= baselineConfig.camera.maxStepHeight,
   "the segmented outer curb remains within the configured walking step height",
 );
-
-const roadBounds = baselineConfig.plaza.roadway.segments.map((segment) => ({
-  name: segment.name,
-  minX: segment.position[0] - segment.size[0] / 2,
-  maxX: segment.position[0] + segment.size[0] / 2,
-  minZ: segment.position[1] - segment.size[1] / 2,
-  maxZ: segment.position[1] + segment.size[1] / 2,
-}));
-for (const [index, segment] of baselineConfig.plaza.roadway.segments.entries()) {
-  const tiles = findNode(plaza, segment.name);
-  const joints = findNode(plaza, `${segment.name}JointSurface`);
-  assert.ok(tiles?.geometry && joints?.geometry, `${segment.name} has separate block and joint meshes`);
-  assert.deepEqual(tiles.material, baselineConfig.materials.road, `${segment.name} uses the dark roadway material`);
-  assert.deepEqual(joints.material, baselineConfig.materials.roadJoint, `${segment.name} uses the roadway joint material`);
-  assert.deepEqual(tiles.collision, { surface: true }, `${segment.name} supplies walkable road support`);
-  near(tiles.position[1], baselineConfig.plaza.entrance.roadTopY, `${segment.name} sits at road elevation`);
-  near(tiles.scale[0], segment.size[0], `${segment.name} width follows the layout parameter`);
-  near(tiles.scale[2], segment.size[1], `${segment.name} depth follows the layout parameter`);
-
-  for (const other of roadBounds.slice(index + 1)) {
-    const overlapX = Math.min(roadBounds[index].maxX, other.maxX) - Math.max(roadBounds[index].minX, other.minX);
-    const overlapZ = Math.min(roadBounds[index].maxZ, other.maxZ) - Math.max(roadBounds[index].minZ, other.minZ);
-    assert.ok(overlapX <= tolerance || overlapZ <= tolerance, `${segment.name} does not overlap ${other.name}`);
-  }
-}
-assert.ok(findNode(plaza, "RoadwayRearBlocks"), "dark block road closes the rear side of the island");
-assert.ok(findNode(plaza, "RoadwayThresholdBaseBlocks"), "the entrance lip seats on a short matching road base");
-
-const entrance = baselineConfig.plaza.entrance;
-const threshold = findNode(plaza, "EntranceThresholdLip");
-const ramp = findNode(plaza, "EntranceAccessRamp");
-assert.ok(threshold?.geometry && ramp?.geometry, "the entrance has a local lip and sloped access ramp");
-assert.deepEqual(threshold.collision, { solid: true, surface: true }, "the entrance lip is a solid walkable step");
-near(threshold.scale[0], entrance.pathWidth, "entrance lip width matches the access path");
-near(threshold.scale[2], entrance.thresholdDepth, "entrance lip depth follows its layout parameter");
-near(threshold.position[1] - threshold.scale[1] / 2, entrance.roadTopY, "entrance lip bottom meets the road");
-near(threshold.position[1] + threshold.scale[1] / 2, baselineConfig.plaza.paverTopY, "entrance lip top meets the pavers");
-const rampConstructionPositions = constructionPositions(ramp);
-const rampPoints = Array.from({ length: ramp.geometry.vertexCount }, (_, index) => [
-  rampConstructionPositions[index * 3],
-  ramp.position[1] + rampConstructionPositions[index * 3 + 1],
-  ramp.position[2] + rampConstructionPositions[index * 3 + 2],
-]);
-const rampHighEnd = rampPoints.filter((point) => Math.abs(point[2] - entrance.rampStartZ) <= tolerance);
-const rampLowEnd = rampPoints.filter((point) => Math.abs(point[2] - entrance.rampEndZ) <= tolerance);
-near(Math.min(...rampHighEnd.map((point) => point[1])), baselineConfig.plaza.paverTopY, "ramp high end meets the paver path");
-near(Math.max(...rampLowEnd.map((point) => point[1])), entrance.roadTopY, "ramp low end meets the road");
-assert.deepEqual(ramp.collision, { surface: true }, "the access ramp is walkable without a blocking wall");
-const thresholdBase = baselineConfig.plaza.roadway.segments.find((segment) => segment.name === "RoadwayThresholdBaseBlocks");
-near(thresholdBase.position[1] - thresholdBase.size[1] / 2, entrance.thresholdCenterZ - entrance.thresholdDepth / 2, "road base meets the lip at its rear edge");
-near(thresholdBase.position[1] + thresholdBase.size[1] / 2, entrance.thresholdCenterZ + entrance.thresholdDepth / 2, "road base meets the ramp at its front edge");
 
 let whiteSupportVertexCount = 0;
 let flowerPetalVertexCount = 0;
@@ -524,7 +543,7 @@ const editedBody = findNode(editedScene, "PlaqueBearingMainBody");
 const rearTriangle = findNode(baselineScene, "RearRedTriangle");
 assert.ok(rearTriangle, "rear red triangle exists");
 near(rearTriangle.rotation[2], 180, "rear red triangle is rotated point-down");
-assert.deepEqual(baselineConfig.materials.tileAccent.color, [0.18, 0.19, 0.2], "side triangles use the softened gray accent color");
+assert.deepEqual(baselineConfig.materials.tileAccent.color, [0.18, 0.19, 0.2], "side triangles use their near-black accent color");
 const baselineBodyBottom = baselineBodyAssembly.position[1] - baselineBody.scale[1] / 2;
 const editedBodyBottom = editedBodyAssembly.position[1] - editedBody.scale[1] / 2;
 near(editedBodyBottom, baselineBodyBottom, "main body bottom remains fixed at the plinth top");
@@ -637,8 +656,8 @@ process.stdout.write(JSON.stringify({
       maxZ: Math.max(...baselineConfig.plaza.outerPavingOutline.map(([, z]) => z)),
     },
     pavingTopY: baselineConfig.plaza.paverTopY,
-    roadTopY: baselineConfig.plaza.entrance.roadTopY,
-    islandRise: baselineConfig.plaza.paverTopY - baselineConfig.plaza.entrance.roadTopY,
+    groundTopY: baselineConfig.plaza.groundTopY,
+    islandRise: baselineConfig.plaza.paverTopY - baselineConfig.plaza.groundTopY,
     paverThickness: baselineConfig.plaza.paverThickness,
     plantingPocketCount: soilPocketNodes.length,
     supportedPlantRoots: soilRootCount,
@@ -646,22 +665,15 @@ process.stdout.write(JSON.stringify({
     patchyLawnSample: lawnSample,
     lawnAnnulusSample,
     outerCurbSegments: curbSegments.length,
-    curbHeightAboveRoad: outerCurbTopY - baselineConfig.plaza.entrance.roadTopY,
-    roadSegments: roadBounds.length,
-    entrance: {
-      width: entrance.pathWidth,
-      rampDepth: entrance.rampDepth,
-      thresholdDepth: entrance.thresholdDepth,
-      thresholdDrop: baselineConfig.plaza.paverTopY - entrance.roadTopY,
-    },
+    curbHeightAboveGround: outerCurbTopY - baselineConfig.plaza.groundTopY,
   },
   geometryHelperRegressions: {
-    roadGrid: {
-      dimensions: [roadWidth, roadDepth],
-      groutCounts: [roadColumns - 1, roadRows - 1],
-      tileArea: { expected: expectedRoadTileArea, actual: measuredRoadTileArea },
-      groutArea: { expected: expectedRoadGroutArea, actual: measuredRoadGroutArea },
-      totalArea: { expected: roadWidth * roadDepth, actual: measuredRoadTileArea + measuredRoadGroutArea },
+    grid: {
+      dimensions: [gridProbeWidth, gridProbeDepth],
+      groutCounts: [gridColumns - 1, gridRows - 1],
+      tileArea: { expected: expectedGridTileArea, actual: measuredGridTileArea },
+      groutArea: { expected: expectedGridGroutArea, actual: measuredGridGroutArea },
+      totalArea: { expected: gridProbeWidth * gridProbeDepth, actual: measuredGridTileArea + measuredGridGroutArea },
       finalGroutStripCovered: true,
       finalTileRowCovered: true,
     },

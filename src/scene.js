@@ -1,7 +1,6 @@
 import { CONFIG, deriveMonumentLayout } from "./config.js";
 import {
   createBoxGeometry,
-  createApronGridGeometry,
   createCircleContour,
   createDiscGeometry,
   createExtrudedPolygonFieldGeometry,
@@ -10,9 +9,9 @@ import {
   createLeafClusterGeometry,
   createOutlinedEmblemPetal,
   createPolygonFieldGeometry,
-  createRampSurfaceGeometry,
   createRingPrismGeometry,
   createSphereGeometry,
+  createTrianglePadGeometry,
   createVerticalGearRingGeometry,
 } from "./geometry.js";
 import { SceneNode } from "./scene-node.js";
@@ -62,16 +61,21 @@ function mergeGeometries(geometries) {
   return { positions, normals, uvs, windWeights, windPhases, vertexCount: totalVertices };
 }
 
-function offsetGeometryUvs(geometry, offsetX, offsetY) {
-  for (let index = 0; index < geometry.uvs.length; index += 2) {
-    geometry.uvs[index] += offsetX;
-    geometry.uvs[index + 1] += offsetY;
-  }
-  return geometry;
-}
-
 function rectangleContour(minX, minZ, maxX, maxZ) {
   return [[minX, minZ], [maxX, minZ], [maxX, maxZ], [minX, maxZ]];
+}
+
+function pointInPolygon(point, contour) {
+  let inside = false;
+  for (let index = 0, previous = contour.length - 1; index < contour.length; previous = index, index += 1) {
+    const [x, z] = contour[index];
+    const [previousX, previousZ] = contour[previous];
+    if ((z > point[1]) !== (previousZ > point[1])
+      && point[0] < ((previousX - x) * (point[1] - z)) / (previousZ - z) + x) {
+      inside = !inside;
+    }
+  }
+  return inside;
 }
 
 function gridJointContours(outline, baseHoles, pitch, width, fixedCoordinates = null) {
@@ -109,7 +113,7 @@ function gridJointContours(outline, baseHoles, pitch, width, fixedCoordinates = 
   };
 }
 
-function addOuterPaving(plaza, boxGeometry) {
+function addOuterPaving(plaza) {
   const settings = C.plaza;
   const thickness = settings.paverThickness;
   const pavingPositionY = settings.paverTopY - thickness / 2;
@@ -204,10 +208,30 @@ function addOuterPaving(plaza, boxGeometry) {
   plaza.add(mesh("OuterPavingFieldGrout", joints.geometry, C.materials.grout, [0, settings.paverTopY, 0], [1, 1, 1], [0, 0, 0], { surface: true }));
 }
 
+function addTrapezoidPavingFrames(plaza) {
+  const settings = C.plaza;
+  const thickness = 0.04;
+  for (const frame of settings.plantingFloorFrames) {
+    plaza.add(mesh(
+      frame.name,
+      createExtrudedPolygonFieldGeometry(frame.contour, [frame.innerContour], thickness),
+      C.materials.tileAccent,
+      [0, settings.paverTopY + thickness / 2 - 0.005, 0],
+      [1, 1, 1],
+      [0, 0, 0],
+      { surface: true },
+    ));
+  }
+}
+
 function addSegmentedOuterCurb(plaza, boxGeometry) {
   const settings = C.plaza;
-  const curb = settings.outerRoadsideCurb;
+  const curb = settings.outerCircularCurb;
   const points = settings.outerPavingOutline;
+  const plantingOpenings = [
+    ...C.plants.plantingPockets.map((pocket) => pocket.contour),
+    settings.lawnFootprint,
+  ];
   const signedArea = points.reduce((sum, point, index) => {
     const next = points[(index + 1) % points.length];
     return sum + point[0] * next[1] - next[0] * point[1];
@@ -215,7 +239,6 @@ function addSegmentedOuterCurb(plaza, boxGeometry) {
   const outwardSign = signedArea > 0 ? -1 : 1;
 
   for (let edgeIndex = 0; edgeIndex < points.length; edgeIndex += 1) {
-    if (curb.openingEdgeIndices.includes(edgeIndex)) continue;
     const from = points[edgeIndex];
     const to = points[(edgeIndex + 1) % points.length];
     const dx = to[0] - from[0];
@@ -229,10 +252,11 @@ function addSegmentedOuterCurb(plaza, boxGeometry) {
       const along = index * spacing + segmentLength / 2;
       const x = from[0] + (dx / length) * along + outward[0] * curb.width / 2;
       const z = from[1] + (dz / length) * along + outward[1] * curb.width / 2;
+      if (plantingOpenings.some((contour) => pointInPolygon([x, z], contour))) continue;
       const yaw = -Math.atan2(dz, dx) * 180 / Math.PI;
       addBox(
         plaza,
-        `OuterRoadsideCurb${String(edgeIndex + 1).padStart(2, "0")}_${String(index + 1).padStart(2, "0")}`,
+        `OuterCircularCurb${String(edgeIndex + 1).padStart(3, "0")}_${String(index + 1).padStart(2, "0")}`,
         boxGeometry,
         C.materials.outerCurb,
         [x, curb.baseY + curb.height / 2, z],
@@ -244,56 +268,13 @@ function addSegmentedOuterCurb(plaza, boxGeometry) {
   }
 }
 
-function addRoadBlocks(plaza) {
-  const settings = C.plaza;
-  const roadway = settings.roadway;
-  for (const segment of roadway.segments) {
-    const [width, depth] = segment.size;
-    const columns = Math.max(1, Math.round(width / roadway.blockSize[0]));
-    const rows = Math.max(1, Math.round(depth / roadway.blockSize[1]));
-    const grid = createApronGridGeometry([width, 1, depth], columns - 1, roadway.jointWidth, rows - 1);
-    const position = [segment.position[0], settings.entrance.roadTopY, segment.position[1]];
-    const scale = [width, 1, depth];
-    plaza.add(mesh(`${segment.name}JointSurface`, grid.grout, C.materials.roadJoint, position, scale, [0, 0, 0], { surface: true }));
-    plaza.add(mesh(`${segment.name}`, grid.tiles, C.materials.road, position, scale, [0, 0, 0], { surface: true }));
-  }
-}
-
-function addEntranceTransition(plaza, boxGeometry) {
-  const settings = C.plaza;
-  const entrance = settings.entrance;
-  const highY = settings.paverTopY;
-  const thresholdDrop = highY - entrance.roadTopY;
-  addBox(
-    plaza,
-    "EntranceThresholdLip",
-    boxGeometry,
-    C.materials.curb,
-    [0, highY - thresholdDrop / 2, entrance.thresholdCenterZ],
-    [entrance.pathWidth, thresholdDrop, entrance.thresholdDepth],
-    [0, 0, 0],
-    { solid: true, surface: true },
-  );
-  const rampDepth = entrance.rampEndZ - entrance.rampStartZ;
-  plaza.add(mesh(
-    "EntranceAccessRamp",
-    createRampSurfaceGeometry(entrance.pathWidth, rampDepth, entrance.roadTopY, highY),
-    C.materials.paving,
-    [0, 0, (entrance.rampStartZ + entrance.rampEndZ) / 2],
-    [1, 1, 1],
-    [0, 0, 0],
-    { surface: true },
-  ));
-}
-
 function addPlaza(root, boxGeometry) {
   const plaza = root.add(new SceneNode({ name: "Plaza" }));
   const groundPositionY = C.plaza.groundTopY - C.plaza.groundSize[1] / 2;
   addBox(plaza, "GroundPlane", boxGeometry, C.materials.earth, [0, groundPositionY, 0], C.plaza.groundSize, [0, 0, 0], { surface: true, perimeter: true });
-  addOuterPaving(plaza, boxGeometry);
+  addOuterPaving(plaza);
+  addTrapezoidPavingFrames(plaza);
   addSegmentedOuterCurb(plaza, boxGeometry);
-  addRoadBlocks(plaza);
-  addEntranceTransition(plaza, boxGeometry);
 
   const gravel = createDiscGeometry(C.plaza.gravelRadius, 72);
   plaza.add(mesh("CircularGravelBed", gravel, C.materials.gravel, [0, 0.055, 0], [1, 1, 1], [0, 0, 0], { surface: true }));
@@ -315,45 +296,45 @@ function addPlaza(root, boxGeometry) {
   const curb = createRingPrismGeometry(C.plaza.curbInnerRadius, C.plaza.curbOuterRadius, C.plaza.curbHeight, 72);
   plaza.add(mesh("RaisedCircularCurb", curb, C.materials.curb, [0, 0.105, 0], [1, 1, 1], [0, 0, 0], { solid: true, surface: true, shape: "annulus" }));
 
-  const tilePadSize = C.plaza.tilePadSize;
-  const tileTopY = C.plaza.tilePadY + tilePadSize[1] / 2;
-  const apronContour = createCircleContour(C.plaza.tilePadRadius, 128);
-  const apronTopOffset = 0.0001; // Keep the backing below tile/grout tops to avoid z-fighting.
-  const apronBodyHeight = tilePadSize[1] - apronTopOffset;
-  const apron = offsetGeometryUvs(
-    createExtrudedPolygonFieldGeometry(apronContour, [], apronBodyHeight),
-    tilePadSize[0] / 2,
-    tilePadSize[2] / 2,
-  );
-  plaza.add(mesh(
-    "CircularPavingApron",
-    apron,
-    C.materials.tile,
-    [0, C.plaza.tilePadY - apronTopOffset / 2, 0],
-    [1, 1, 1],
-    [0, 0, 0],
-  ));
+  addBox(plaza, "SquarePavingApron", boxGeometry, C.materials.tile, [0, C.plaza.tilePadY, 0], C.plaza.tilePadSize, [0, 0, 0], { surface: true });
+  const padTop = C.plaza.tilePadY + C.plaza.tilePadSize[1] / 2 + 0.002;
+  const padHalfX = C.plaza.tilePadSize[0] / 2;
+  const padHalfZ = C.plaza.tilePadSize[2] / 2;
+  for (let index = 1; index <= C.plaza.tileGroutCount; index += 1) {
+    const x = -padHalfX + (C.plaza.tilePadSize[0] * index) / (C.plaza.tileGroutCount + 1);
+    const z = -padHalfZ + (C.plaza.tilePadSize[2] * index) / (C.plaza.tileGroutCount + 1);
+    addBox(plaza, `ApronGroutNorthSouth${index}`, boxGeometry, C.materials.grout, [x, padTop, 0], [C.plaza.tileGroutWidth, 0.004, C.plaza.tilePadSize[2]], [0, 0, 0], { surface: true });
+    addBox(plaza, `ApronGroutEastWest${index}`, boxGeometry, C.materials.grout, [0, padTop, z], [C.plaza.tilePadSize[0], 0.004, C.plaza.tileGroutWidth], [0, 0, 0], { surface: true });
+  }
 
-  const gridPitch = tilePadSize[0] / (C.plaza.tileGroutCount + 1);
-  const gridCoordinates = Array.from(
-    { length: C.plaza.tileGroutCount },
-    (_, index) => -tilePadSize[0] / 2 + (index + 1) * gridPitch,
-  );
-  const apronGrid = gridJointContours(
-    apronContour,
-    [],
-    gridPitch,
-    C.plaza.tileGroutWidth,
-    gridCoordinates,
-  );
-  const apronTiles = offsetGeometryUvs(
-    createPolygonFieldGeometry(apronContour, apronGrid.contours),
-    tilePadSize[0] / 2,
-    tilePadSize[2] / 2,
-  );
-  const surfaceY = tileTopY;
-  plaza.add(mesh("ApronGroutSurface", apronGrid.geometry, C.materials.grout, [0, surfaceY, 0], [1, 1, 1], [0, 0, 0], { surface: true }));
-  plaza.add(mesh("ApronTileSurfaces", apronTiles, C.materials.tile, [0, surfaceY, 0], [1, 1, 1], [0, 0, 0], { surface: true }));
+  const span = C.plaza.triangleSpan;
+  const triangleHeight = (span * Math.sqrt(3)) / 2;
+  const corners = [
+    { name: "ApronCornerNorthEast", position: [padHalfX, padTop + 0.002, padHalfZ], points: [[0, 0], [-span, 0], [-span / 2, -triangleHeight]] },
+    { name: "ApronCornerNorthWest", position: [-padHalfX, padTop + 0.002, padHalfZ], points: [[0, 0], [span, 0], [span / 2, -triangleHeight]] },
+    { name: "ApronCornerSouthEast", position: [padHalfX, padTop + 0.002, -padHalfZ], points: [[0, 0], [-span, 0], [-span / 2, triangleHeight]] },
+    { name: "ApronCornerSouthWest", position: [-padHalfX, padTop + 0.002, -padHalfZ], points: [[0, 0], [span, 0], [span / 2, triangleHeight]] },
+  ];
+  const sides = [
+    { name: "ApronSideNorth", position: [0, padTop + 0.002, padHalfZ], points: [[-span / 2, 0], [span / 2, 0], [0, triangleHeight]] },
+    { name: "ApronSideSouth", position: [0, padTop + 0.002, -padHalfZ], points: [[-span / 2, 0], [span / 2, 0], [0, -triangleHeight]] },
+    { name: "ApronSideEast", position: [padHalfX, padTop + 0.002, 0], points: [[0, -span / 2], [0, span / 2], [triangleHeight, 0]] },
+    { name: "ApronSideWest", position: [-padHalfX, padTop + 0.002, 0], points: [[0, -span / 2], [0, span / 2], [-triangleHeight, 0]] },
+  ];
+  for (const triangle of corners) {
+    plaza.add(mesh(triangle.name, createTrianglePadGeometry(triangle.points), C.materials.tile, triangle.position, [1, 1, 1], [0, 0, 0], { surface: true }));
+  }
+  for (const triangle of sides) {
+    plaza.add(mesh(
+      triangle.name,
+      createTrianglePadGeometry(triangle.points, C.plaza.tilePadSize[1]),
+      C.materials.tileAccent,
+      [triangle.position[0], C.plaza.tilePadY, triangle.position[2]],
+      [1, 1, 1],
+      [0, 0, 0],
+      { surface: true },
+    ));
+  }
   return plaza;
 }
 
@@ -595,7 +576,8 @@ function addBladedPlantGroups(root) {
   const planting = root.add(new SceneNode({ name: "PlantingGroups" }));
   const settings = C.plants;
   const density = Math.max(0, Math.min(2, settings.density));
-  const bladeMaterials = [C.materials.leafGold, C.materials.leafLime, C.materials.leafGreen];
+  const goldBladeMaterials = [C.materials.leafGold, C.materials.leafLime, C.materials.leafGreen];
+  const rustBladeMaterials = [C.materials.leafRustLight, C.materials.leafRust, C.materials.leafRust];
 
   settings.plantingPockets.forEach((pocket, pocketIndex) => {
     const bed = planting.add(new SceneNode({ name: pocket.name }));
@@ -614,19 +596,22 @@ function addBladedPlantGroups(root) {
       const group = bed.add(new SceneNode({
         name: `LeafCluster${String(clusterIndex + 1).padStart(2, "0")}`,
         position: [x, settings.soilSurfaceY, z],
+        rotation: [0, cluster.rotationY ?? 0, 0],
       }));
       const random = seededRandom(settings.seed + pocketIndex * 104729 + clusterIndex * 27011);
+      const isRustPlant = cluster.species === "rust";
       const buckets = makeLeafBuckets(Math.round(cluster.leaves * density), random, {
         rootSpread: cluster.rootSpread,
         height: cluster.height,
-        width: [0.055, 0.105],
-        bend: [0.18, 0.54],
-        goldShare: 0.42,
-        limeShare: 0.4,
+        width: cluster.width ?? (isRustPlant ? [0.04, 0.075] : [0.055, 0.105]),
+        bend: cluster.bend ?? (isRustPlant ? [0.1, 0.34] : [0.18, 0.54]),
+        goldShare: isRustPlant ? 0.48 : 0.42,
+        limeShare: isRustPlant ? 0.32 : 0.4,
       });
       buckets.forEach((leaves, colorIndex) => {
         if (leaves.length === 0) return;
-        group.add(mesh(`WindLeafSet${colorIndex + 1}`, createLeafClusterGeometry(leaves), bladeMaterials[colorIndex]));
+        const materials = isRustPlant ? rustBladeMaterials : goldBladeMaterials;
+        group.add(mesh(`WindLeafSet${colorIndex + 1}`, createLeafClusterGeometry(leaves), materials[colorIndex]));
       });
     });
   });

@@ -395,7 +395,7 @@ async function main() {
       await page.screenshot({ path: evidencePath("stage-h-" + (preset === "threeQuarter" ? "three-quarter" : preset) + ".png"), fullPage: true });
     }
     await page.locator("[data-camera-preset='front']").click();
-    await check("Top-down apron view shows a circular monument-foot pavement", async () => {
+    await check("Top-down apron view shows square tiles with dark triangular sides", async () => {
       await page.evaluate(() => {
         const { camera, input } = window.__grakomsTest;
         input.clearMovementState();
@@ -423,52 +423,24 @@ async function main() {
           }
           return null;
         };
-        const restore = (node, index) => {
-          const p = node.geometry.positions;
-          const m = node.objectToConstruction;
-          return [
-            m[0] * p[index] + m[4] * p[index + 1] + m[8] * p[index + 2] + m[12],
-            m[2] * p[index] + m[6] * p[index + 1] + m[10] * p[index + 2] + m[14],
-          ];
-        };
-        const circle = find(scene, "CircularPavingApron");
-        if (!circle?.geometry) throw new Error("The circular monument-foot apron is missing.");
-        let maxRadius = 0;
-        let minBoundaryRadius = Infinity;
-        let maxBoundaryRadius = -Infinity;
-        const radii = [];
-        for (let index = 0; index < circle.geometry.positions.length; index += 3) {
-          const [x, z] = restore(circle, index);
-          const radius = Math.hypot(x, z);
-          radii.push(radius);
-          maxRadius = Math.max(maxRadius, radius);
-        }
-        let boundaryVertices = 0;
-        for (const radius of radii) {
-          if (radius < maxRadius - 0.0001) continue;
-          boundaryVertices += 1;
-          minBoundaryRadius = Math.min(minBoundaryRadius, radius);
-          maxBoundaryRadius = Math.max(maxBoundaryRadius, radius);
-        }
-        const surfaces = ["ApronTileSurfaces", "ApronGroutSurface"].map((name) => {
+        const square = find(scene, "SquarePavingApron");
+        if (!square?.geometry) throw new Error("The square monument-foot apron is missing.");
+        const sideTriangles = ["ApronSideNorth", "ApronSideSouth", "ApronSideEast", "ApronSideWest"].map((name) => {
           const node = find(scene, name);
           if (!node?.geometry) throw new Error(name + " is missing.");
-          let surfaceRadius = 0;
-          for (let index = 0; index < node.geometry.positions.length; index += 3) {
-            const [x, z] = restore(node, index);
-            surfaceRadius = Math.max(surfaceRadius, Math.hypot(x, z));
-          }
-          return { name, surfaceRadius };
+          return { name, vertexCount: node.geometry.vertexCount, color: node.material.color };
         });
-        return { maxRadius, boundaryVertices, boundarySpread: maxBoundaryRadius - minBoundaryRadius, surfaces };
+        return { size: [...square.scale], sideTriangles };
       });
-      assert.ok(apron.boundaryVertices >= 128, "the apron exposes a sampled circle boundary");
-      assert.ok(apron.boundarySpread < 0.001, "the apron boundary has a constant radius rather than square corners");
-      for (const surface of apron.surfaces) {
-        assert.ok(surface.surfaceRadius <= apron.maxRadius + 0.001, surface.name + " stays inside the circular apron");
+      assert.equal(apron.size[0], 2.68, "the apron has its square width");
+      assert.equal(apron.size[2], 2.68, "the apron has its square depth");
+      assert.equal(apron.sideTriangles.length, 4);
+      for (const triangle of apron.sideTriangles) {
+        assert.equal(triangle.vertexCount, 24, triangle.name + " is a solid triangular prism");
+        assert.deepEqual(triangle.color, [0.18, 0.19, 0.2], triangle.name + " has the near-black accent material");
       }
-      await page.screenshot({ path: evidencePath("stage-h-apron-top-down.png"), fullPage: true });
-      await page.locator("#scene-canvas").screenshot({ path: evidencePath("stage-h-apron-top-down-canvas.png") });
+      await page.screenshot({ path: evidencePath("stage-h-apron-square-top-down.png"), fullPage: true });
+      await page.locator("#scene-canvas").screenshot({ path: evidencePath("stage-h-apron-square-top-down-canvas.png") });
       await page.locator("[data-camera-preset='front']").click();
       return { position: pose.position, pitch: pose.pitch, reference: "oblique", apron };
     });

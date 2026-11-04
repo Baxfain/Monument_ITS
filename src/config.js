@@ -1,6 +1,73 @@
 // All values use relative scene units; source photographs are not calibrated.
 import { YELLOW_PETAL_CONTOURS, YELLOW_PETAL_HEIGHT, YELLOW_PETAL_WIDTH } from "./yellow-petal-contours.js";
 
+function createCircularPlazaOutline(radius, segmentCount = 128) {
+  return Array.from({ length: segmentCount }, (_, index) => {
+    const angle = -(index / segmentCount) * Math.PI * 2;
+    return [Math.cos(angle) * radius, Math.sin(angle) * radius];
+  });
+}
+
+function createRectangularPlantingPocket(name, centerAngle, options) {
+  const { centerRadius, radialDepth, tangentialWidth, leaves, rootSpread, height, species = "gold", width, bend } = options;
+  const radial = [Math.sin(centerAngle), Math.cos(centerAngle)];
+  const tangent = [Math.cos(centerAngle), -Math.sin(centerAngle)];
+  const center = [radial[0] * centerRadius, radial[1] * centerRadius];
+  const pointAt = (radialOffset, tangentOffset) => [
+    center[0] + radial[0] * radialOffset + tangent[0] * tangentOffset,
+    center[1] + radial[1] * radialOffset + tangent[1] * tangentOffset,
+  ];
+  return {
+    name,
+    shape: "rectangle",
+    centerRadius,
+    radialDepth,
+    tangentialWidth,
+    contour: [
+      pointAt(-radialDepth / 2, -tangentialWidth / 2),
+      pointAt(-radialDepth / 2, tangentialWidth / 2),
+      pointAt(radialDepth / 2, tangentialWidth / 2),
+      pointAt(radialDepth / 2, -tangentialWidth / 2),
+    ],
+    clusters: [{
+      position: center,
+      rotationY: centerAngle * 180 / Math.PI,
+      leaves,
+      rootSpread,
+      height,
+      species,
+      width,
+      bend,
+    }],
+  };
+}
+
+function createTrapezoidPavingFrame(name, centerAngle) {
+  const pointAt = (radius, angle) => [Math.sin(angle) * radius, Math.cos(angle) * radius];
+  const outerRadius = 5.68;
+  const innerRadius = 4.78;
+  const outerHalfAngle = 8 * Math.PI / 180;
+  const innerHalfAngle = 6 * Math.PI / 180;
+  const contour = [
+    pointAt(outerRadius, centerAngle - outerHalfAngle),
+    pointAt(outerRadius, centerAngle + outerHalfAngle),
+    pointAt(innerRadius, centerAngle + innerHalfAngle),
+    pointAt(innerRadius, centerAngle - innerHalfAngle),
+  ];
+  const center = contour.reduce((sum, [x, z]) => [sum[0] + x / contour.length, sum[1] + z / contour.length], [0, 0]);
+  return {
+    name,
+    contour,
+    innerContour: contour.map(([x, z]) => [center[0] + (x - center[0]) * 0.84, center[1] + (z - center[1]) * 0.84]),
+  };
+}
+
+const outerPavingRadius = 5.9;
+const outerPlazaOutline = createCircularPlazaOutline(outerPavingRadius);
+const frontBedAngles = [-14, -8, -2, 2, 8, 14];
+const rearBedAngles = [-22, -13, -4, 4, 13, 22];
+const sideBedAngles = [55, 90, 125, -55, -90, -125];
+
 export const CONFIG = {
   renderer: {
     maxPixelRatio: 2,
@@ -100,13 +167,11 @@ export const CONFIG = {
     leafRustLight: { color: [0.48, 0.12, 0.035], shininess: 8, specular: 0.025, doubleSided: true },
     soil: { color: [0.11, 0.075, 0.035], shininess: 3, specular: 0.01 },
     lawn: { color: [1, 1, 1], texture: "patchyLawn", textureRepeat: [0.95, 0.95], shininess: 3, specular: 0.01 },
-    roadJoint: { color: [0.045, 0.052, 0.055], shininess: 3, specular: 0.01 },
     shrub: { color: [0.12, 0.26, 0.1], shininess: 12, specular: 0.025 },
     shrubVariegated: { color: [0.4, 0.39, 0.2], shininess: 12, specular: 0.025 },
     treeBark: { color: [0.12, 0.065, 0.035], shininess: 5, specular: 0.01 },
     treeCanopy: { color: [0.035, 0.12, 0.045], shininess: 7, specular: 0.02 },
     treeCanopyLight: { color: [0.06, 0.19, 0.065], shininess: 8, specular: 0.02 },
-    road: { color: [0.12, 0.13, 0.13], shininess: 5, specular: 0.015 },
     building: { color: [0.62, 0.66, 0.67], shininess: 16, specular: 0.08 },
     glazing: { color: [0.08, 0.27, 0.36], shininess: 32, specular: 0.28 },
     metal: { color: [0.48, 0.54, 0.56], shininess: 48, specular: 0.34 },
@@ -123,56 +188,31 @@ export const CONFIG = {
     paverRows: 4,
     paverSectors: 32,
     paverJointWidth: 0.012,
-    outerPavingOutline: [
-      [-7.4, -6.4], [-7.4, 6.3], [-6.5, 7.2], [-2.35, 7.2],
-      [-2.35, 10.0], [-1.8, 10.65], [1.8, 10.65], [2.35, 10.0],
-      [2.35, 7.2], [6.5, 7.2], [7.4, 6.3], [7.4, -6.4],
-      [6.5, -7.3], [-6.5, -7.3],
-    ],
+    outerPavingRadius,
+    outerPavingOutline: outerPlazaOutline,
     outerPavingTilePitch: 1.35,
     outerPavingJointWidth: 0.022,
+    plantingFloorFrames: [72.5, 107.5, -72.5, -107.5].map((degrees, index) =>
+      createTrapezoidPavingFrame(`TrapezoidPavingFrame${String(index + 1).padStart(2, "0")}`, degrees * Math.PI / 180)),
     gravelRadius: 3.02,
     curbInnerRadius: 2.91,
     curbOuterRadius: 3.05,
     curbHeight: 0.12,
     islandLawnTopY: 0.085,
     lawnFootprint: [
-      [2.7, -7.15], [7.1, -7.15], [7.1, -3.25],
-      [6.15, -2.8], [4.15, -3.05], [3.25, -4.15],
+      [2.35, -4.0], [3.35, -3.55], [4.1, -2.7],
+      [3.85, -2.1], [3.1, -2.2], [2.3, -3.0],
     ],
-    outerRoadsideCurb: {
-      baseY: -0.02,
-      height: 0.22,
+    outerCircularCurb: {
+      baseY: -0.04,
+      height: 0.16,
       width: 0.18,
       segmentLength: 0.56,
       segmentGap: 0.025,
-      openingEdgeIndices: [5],
-    },
-    entrance: {
-      pathWidth: 3.6,
-      thresholdDepth: 0.14,
-      thresholdCenterZ: 10.72,
-      rampDepth: 1.2,
-      rampStartZ: 10.79,
-      rampEndZ: 11.99,
-      roadTopY: -0.02,
-    },
-    roadway: {
-      blockSize: [0.48, 0.34],
-      jointWidth: 0.018,
-      segments: [
-        { name: "RoadwayWestBlocks", position: [-8.79, -0.05], size: [2.42, 14.86] },
-        { name: "RoadwayEastBlocks", position: [8.79, -0.05], size: [2.42, 14.86] },
-        { name: "RoadwayRearBlocks", position: [0, -8.64], size: [15.16, 2.32] },
-        { name: "RoadwayFrontLeftBlocks", position: [-6.765, 9.69], size: [9.43, 4.62] },
-        { name: "RoadwayFrontRightBlocks", position: [6.765, 9.69], size: [9.43, 4.62] },
-        { name: "RoadwayThresholdBaseBlocks", position: [0, 10.72], size: [3.6, 0.14] },
-        { name: "RoadwayEntryBlocks", position: [0, 12.99], size: [3.6, 2.0] },
-      ],
     },
     tilePadSize: [2.68, 0.08, 2.68],
     tilePadY: 0.18,
-    tilePadRadius: 1.62, // Keeps approximately the previous square-and-triangle apron area.
+    triangleSpan: 0.8,
     tileGroutCount: 5,
     tileGroutWidth: 0.014,
   },
@@ -268,52 +308,29 @@ export const CONFIG = {
     seed: 20261103,
     density: 1.2,
     tallLeavesPerCluster: 36,
-    soilSurfaceY: 0.085,
+    soilSurfaceY: 0.15,
     plantingPockets: [
-      {
-        name: "EntranceWestSoilPocket",
-        contour: [[-6.75, 4.75], [-3.5, 4.75], [-3.15, 5.65], [-3.55, 6.75], [-6.65, 6.75]],
-        clusters: [
-          { position: [-5.65, 5.35], leaves: 32, rootSpread: 0.24, height: [0.7, 1.35] },
-          { position: [-4.35, 5.95], leaves: 29, rootSpread: 0.22, height: [0.65, 1.3] },
-        ],
-      },
-      {
-        name: "EntranceEastSoilPocket",
-        contour: [[3.5, 4.75], [6.75, 4.75], [6.65, 6.75], [3.55, 6.75], [3.15, 5.65]],
-        clusters: [
-          { position: [4.35, 5.95], leaves: 29, rootSpread: 0.22, height: [0.65, 1.3] },
-          { position: [5.65, 5.35], leaves: 32, rootSpread: 0.24, height: [0.7, 1.35] },
-        ],
-      },
-      {
-        name: "WestMidSoilPocket",
-        contour: [[-7.15, -1.9], [-6.15, -2.6], [-5.95, 1.9], [-7.15, 2.55]],
-        clusters: [
-          { position: [-6.6, 0.2], leaves: 34, rootSpread: 0.22, height: [0.75, 1.4] },
-        ],
-      },
-      {
-        name: "EastMidSoilPocket",
-        contour: [[6.15, -1.35], [7.15, -1.85], [7.15, 2.55], [6.2, 3.05]],
-        clusters: [
-          { position: [6.65, 0.25], leaves: 31, rootSpread: 0.2, height: [0.7, 1.35] },
-          { position: [6.65, 1.95], leaves: 29, rootSpread: 0.2, height: [0.68, 1.3] },
-        ],
-      },
-      {
-        name: "RearWestSoilPocket",
-        contour: [[-6.85, -6.8], [-3.65, -6.8], [-3.15, -5.8], [-6.5, -5.7]],
-        clusters: [
-          { position: [-5.45, -6.25], leaves: 31, rootSpread: 0.2, height: [0.65, 1.28] },
-        ],
-      },
+      ...frontBedAngles.map((degrees, index) => createRectangularPlantingPocket(
+        `FrontArcSoilBed${String(index + 1).padStart(2, "0")}`,
+        degrees * Math.PI / 180,
+        { centerRadius: 5.25, radialDepth: 0.50, tangentialWidth: 0.25, leaves: 19, rootSpread: 0.045, height: [0.30, 0.46], width: [0.045, 0.075], bend: [0.08, 0.18] },
+      )),
+      ...rearBedAngles.map((degrees, index) => createRectangularPlantingPocket(
+        `RearArcSoilBed${String(index + 1).padStart(2, "0")}`,
+        Math.PI + degrees * Math.PI / 180,
+        { centerRadius: 5.25, radialDepth: 0.62, tangentialWidth: 0.34, leaves: 28, rootSpread: 0.06, height: [0.50, 0.66], species: "rust", width: [0.04, 0.07], bend: [0.1, 0.24] },
+      )),
+      ...sideBedAngles.map((degrees, index) => createRectangularPlantingPocket(
+        `SidePlantBlock${String(index + 1).padStart(2, "0")}`,
+        degrees * Math.PI / 180,
+        { centerRadius: 5.23, radialDepth: 0.64, tangentialWidth: 0.46, leaves: 30, rootSpread: 0.06, height: [0.32, 0.50], width: [0.045, 0.075], bend: [0.09, 0.22] },
+      )),
     ],
     redLeavesPerTuft: 16,
     redTuftPositions: [
-      [5.1, -4.8], [6.2, -5.8], [4.2, -6.2], [6.4, -3.9],
+      [3.0, -3.2], [3.5, -2.8], [2.7, -3.5], [3.5, -2.3],
     ],
-    shrubPositions: [[-5.7, -6.2], [-4.3, 5.9], [4.35, 5.95], [-6.6, 0.2], [6.65, 0.25]],
+    shrubPositions: [[-3.04, -3.3], [-2.3, 3.15], [2.32, 3.17], [-3.52, 0.1], [3.54, 0.095]],
   },
   context: {
     buildingVisible: false,
