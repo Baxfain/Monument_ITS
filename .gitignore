@@ -1,0 +1,8 @@
+
+node_modules/
+__pycache__/
+.venv/
+*.zip
+*.docx
+*.log
+*:Zone.Identifier

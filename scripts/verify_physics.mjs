@@ -9,7 +9,8 @@ import { FRAGMENT_SHADER } from "../src/shaders.js";
 const near = (actual, expected, tolerance, label) => {
   assert.ok(Math.abs(actual - expected) <= tolerance, `${label}: expected ${expected}, got ${actual}`);
 };
-const world = new CollisionWorld(createScene());
+const scene = createScene();
+const world = new CollisionWorld(scene);
 const radius = CONFIG.camera.collisionRadius;
 const standingHeight = CONFIG.camera.standingBodyHeight;
 
@@ -18,17 +19,14 @@ near(world.mapBounds.maxX, 30, 1e-5, "ground east edge comes from rendered geome
 near(world.mapBounds.minZ, -30, 1e-5, "ground south edge comes from rendered geometry");
 near(world.mapBounds.maxZ, 30, 1e-5, "ground north edge comes from rendered geometry");
 assert.equal(world.colliderByName.has("GroundPlane"), false, "grass is a walkable surface, not a wall");
-assert.equal(world.colliderByName.has("MainBuildingMass"), true);
-assert.equal(world.colliderByName.has("EastBuildingWing"), true);
-assert.equal(world.colliderByName.has("RoofSlab"), true);
+const buildingPartName = /^(?:MainBuildingMass|BlueGlazedFacade|EastBuildingWing|RoofSlab|WhiteBuildingSupport|HorizontalSilverLouver|BlueWayfindingSign|SignPanel|SignTopLine|SignMiddleLine|SignLowerLine)/;
+assert.equal(world.colliders.some((collider) => buildingPartName.test(collider.name)), false, "rear building and attached details add no solid colliders");
+assert.equal(world.surfaces.some((surface) => buildingPartName.test(surface.name)), false, "rear building and attached details add no walkable surfaces");
 assert.equal(world.colliderByName.has("PlinthStepLower"), true);
 assert.equal(world.colliders.some((collider) => collider.name === "TreeTrunk"), true);
 assert.equal(world.colliders.some((collider) => collider.name === "BenchSeat"), true);
 assert.equal(world.colliders.some((collider) => collider.name.startsWith("WindLeafSet")), false);
 assert.equal(world.colliders.some((collider) => collider.name === "GroundPlane" || collider.name === "ParkRoad"), false);
-near(world.colliderByName.get("MainBuildingMass").bounds.minZ, -15.5, 1e-5, "building bound follows rendered mass");
-near(world.colliderByName.get("EastBuildingWing").bounds.maxX, 15.7, 1e-5, "wing bound follows configured geometry");
-
 const clamped = world.clampToMap(100, -100, radius);
 near(clamped.x, 30 - radius, 1e-6, "map bound includes body radius");
 near(clamped.z, -30 + radius, 1e-6, "map bound includes body radius");
@@ -56,9 +54,16 @@ for (const test of edgeCases) {
   assert.ok(camera.feetY > camera.collisionWorld.mapBounds.minY, `${test.name} jump remains above ground`);
 }
 
+function supportAt(x, z, sampleRadius = radius) {
+  const support = world.findSurface(x, z, sampleRadius);
+  assert.ok(support, `a walkable surface supports (${x}, ${z})`);
+  return support;
+}
+
 function cameraAt(x, z, yaw = 0) {
+  const support = supportAt(x, z);
   const camera = new Camera({ collisionWorld: world });
-  camera.reset({ position: [x, CONFIG.camera.eyeHeight, z], yaw, pitch: 0 });
+  camera.reset({ position: [x, support.y + CONFIG.camera.eyeHeight, z], yaw, pitch: 0 });
   return camera;
 }
 
@@ -87,6 +92,54 @@ const crouchDistance = Math.hypot(crouch.position[0] - crouchStart[0], crouch.po
 near(crouchDistance, CONFIG.camera.walkingSpeed * CONFIG.camera.crouchMultiplier, 0.004, "crouch takes precedence over sprint");
 near(crouch.eyeHeight, CONFIG.camera.crouchEyeHeight, 0.002, "crouch lowers eye height smoothly");
 
+const plaza = CONFIG.plaza;
+const roadY = plaza.entrance.roadTopY;
+const paverY = plaza.paverTopY;
+const soilY = CONFIG.plants.soilSurfaceY;
+const lawnY = plaza.islandLawnTopY;
+const roadSupport = supportAt(-8.79, 4);
+near(roadSupport.y, roadY, 0.002, "dark roadway blocks support the camera at road height");
+const soilSupport = supportAt(-6.0, 6.1);
+near(soilSupport.y, soilY, 0.002, "a separate soil pocket supports the camera at its lowered bed height");
+const lawnSupport = supportAt(5.3, -5.2);
+near(lawnSupport.y, lawnY, 0.002, "the rear-right patchy lawn supports the camera at island height");
+const lawnAnnulusSupport = supportAt(3.8, -4.0);
+near(lawnAnnulusSupport.y, lawnY, 0.002, "the rear-right lawn stays walkable where it crosses the circular paving radius");
+assert.equal(lawnAnnulusSupport.name, "RearRightPatchyLawn", "paving does not take support priority inside the lawn opening");
+
+const curbCrossing = cameraAt(-8.79, 4, Math.PI / 2);
+curbCrossing.update(1, 0, 1.5);
+assert.ok(curbCrossing.position[0] > -6.6, "walking crosses the segmented outer curb from the west road");
+near(curbCrossing.feetY, paverY, 0.01, "the camera settles onto the raised pavers after stepping over the curb");
+
+const lawnPath = world.moveHorizontal(5.3, -5.2, 0.7, 0, {
+  feetY: lawnSupport.y,
+  bodyHeight: standingHeight,
+  radius,
+});
+near(lawnPath.x, 6.0, 0.004, "grass remains passable across the rear-right lawn");
+near(supportAt(lawnPath.x, lawnPath.z).y, lawnY, 0.002, "lawn traversal keeps continuous support");
+
+const roadPath = cameraAt(-8.79, 0, 0);
+roadPath.update(1, 0, 0.8);
+near(roadPath.position[0], -8.79, 0.003, "road traversal stays in its configured lane");
+near(roadPath.feetY, roadY, 0.01, "road traversal keeps a level road support height");
+
+const thresholdSupport = supportAt(0, plaza.entrance.thresholdCenterZ, 0);
+near(thresholdSupport.y, paverY, 0.002, "the solid entrance lip supports its raised top");
+const rampHighSupport = supportAt(0, plaza.entrance.rampStartZ + 0.01, 0);
+const rampLowSupport = supportAt(0, plaza.entrance.rampEndZ - 0.05, 0);
+assert.ok(rampHighSupport.y < paverY && rampHighSupport.y > roadY, "the ramp leaves the paver height smoothly");
+assert.ok(rampLowSupport.y > roadY - 0.01 && rampLowSupport.y < roadY + 0.03, "the ramp arrives at road height");
+const entranceWalkOut = cameraAt(0, 10.3, Math.PI);
+entranceWalkOut.update(1, 0, 2.2);
+assert.ok(entranceWalkOut.position[2] > 12.7, "the entrance path remains walkable from the island to the road");
+near(entranceWalkOut.feetY, roadY, 0.01, "the downhill entrance transition lands on the roadway");
+const entranceWalkIn = cameraAt(0, 12.6, 0);
+entranceWalkIn.update(1, 0, 2.2);
+assert.ok(entranceWalkIn.position[2] < 10.5, "the entrance path remains walkable from the road onto the island");
+near(entranceWalkIn.feetY, paverY, 0.01, "the uphill entrance transition reaches the paver elevation");
+
 const jumper = cameraAt(5, 0);
 const jumpGround = jumper.feetY;
 jumper.update(0, 0, 1 / 120, { jumpPressed: true });
@@ -106,25 +159,32 @@ assert.equal(jumper.jumpQueued, false, "midair repeated press does not queue a s
 assert.ok(airborneHeightChanged, "gravity advances the camera with zero movement input");
 assert.ok(jumpApex > jumpGround + 0.6 && jumpApex < jumpGround + 0.9, "jump apex is bounded by velocity and gravity");
 
-const monumentFront = world.moveHorizontal(0, 3, 0, -10, { feetY: -0.04, bodyHeight: standingHeight, radius });
+const lawnJumper = cameraAt(5.3, -5.2);
+const lawnJumpGround = lawnJumper.feetY;
+lawnJumper.update(0, 0, 1 / 120, { jumpPressed: true });
+for (let index = 0; index < 180; index += 1) lawnJumper.update(0, 0, 1 / 120);
+near(lawnJumper.feetY, lawnJumpGround, 0.002, "a jump lands back on the patchy lawn support surface");
+assert.equal(lawnJumper.grounded, true, "the patchy lawn remains a valid landing surface");
+
+const monumentFront = world.moveHorizontal(0, 3, 0, -10, { feetY: supportAt(0, 3).y, bodyHeight: standingHeight, radius });
 assert.ok(monumentFront.z > 0.55, "high-displacement move cannot tunnel through monument");
-const monumentRear = world.moveHorizontal(0, -3, 0, 10, { feetY: -0.04, bodyHeight: standingHeight, radius });
+const monumentRear = world.moveHorizontal(0, -3, 0, 10, { feetY: supportAt(0, -3).y, bodyHeight: standingHeight, radius });
 assert.ok(monumentRear.z < -0.55, "monument blocks movement from the rear");
-const building = world.moveHorizontal(0, -11, 0, -10, { feetY: -0.04, bodyHeight: standingHeight, radius });
-assert.ok(building.z > -15, "high-displacement move stops at rear building frontage");
-const wing = world.moveHorizontal(14, -13, 0, -10, { feetY: -0.04, bodyHeight: standingHeight, radius });
-assert.ok(wing.z > -15.2 - radius - 0.01, "east wing blocks movement independently of main mass");
-const grassPath = world.moveHorizontal(-20, -20, 25, 0, { feetY: -0.04, bodyHeight: standingHeight, radius });
+const rearTraversal = world.moveHorizontal(0, -11, 0, -10, { feetY: supportAt(0, -11).y, bodyHeight: standingHeight, radius });
+assert.ok(rearTraversal.z < -16, "high-displacement movement crosses the former rear building footprint");
+const rearWingTraversal = world.moveHorizontal(14, -13, 0, -10, { feetY: supportAt(14, -13).y, bodyHeight: standingHeight, radius });
+assert.ok(rearWingTraversal.z < -17, "movement crosses the former east wing footprint");
+const grassPath = world.moveHorizontal(-20, -20, 25, 0, { feetY: supportAt(-20, -20).y, bodyHeight: standingHeight, radius });
 near(grassPath.x, 5, 0.003, "grass and planting remain passable");
 
-const sliding = world.moveHorizontal(0, 2, 0.4, -2, { feetY: -0.04, bodyHeight: standingHeight, radius });
+const sliding = world.moveHorizontal(0, 2, 0.4, -2, { feetY: supportAt(0, 2).y, bodyHeight: standingHeight, radius });
 assert.ok(sliding.z >= 0.68 && sliding.z < 0.73, "diagonal contact stops at the upper plinth's front face");
 assert.ok(sliding.x > 0.38, "diagonal contact preserves motion tangent to the monument face");
 assert.equal(world.canOccupy(sliding.x, sliding.z, sliding.feetY, standingHeight, radius), true, "wall sliding ends without penetration");
 
-const buildingSlide = world.moveHorizontal(0, -12, 1.2, -4, { feetY: -0.04, bodyHeight: standingHeight, radius });
-assert.ok(buildingSlide.z > -14.28, "high-displacement diagonal contact stops at the main building frontage");
-assert.ok(buildingSlide.x > 1.1, "main building frontage preserves tangential movement");
+const rearDiagonalTraversal = world.moveHorizontal(0, -12, 1.2, -4, { feetY: supportAt(0, -12).y, bodyHeight: standingHeight, radius });
+assert.ok(rearDiagonalTraversal.z < -15, "diagonal movement crosses the former rear building frontage");
+assert.ok(rearDiagonalTraversal.x > 1.1, "movement stays free across the former building frontage");
 
 const plinthLanding = world.resolveVertical(0, 0, 1, 0, standingHeight, radius);
 near(plinthLanding.feetY, 0.52, 0.003, "falling movement lands on the highest walkable plinth top");
@@ -182,10 +242,23 @@ process.stdout.write(JSON.stringify({
   walkableTriangleCount: world.surfaces.length,
   movement: { walkingDistance, diagonalDistance, sprintDistance, crouchDistance },
   jump: { ground: jumpGround, apex: jumpApex, landed: jumper.feetY },
+  outerPlazaSupport: {
+    roadY,
+    soilY,
+    lawnY,
+    lawnAnnulus: lawnAnnulusSupport,
+    paverY,
+    curbCrossing: { x: curbCrossing.position[0], feetY: curbCrossing.feetY },
+    lawnPath,
+    lawnJump: { ground: lawnJumpGround, landed: lawnJumper.feetY },
+    entranceWalkOut: { z: entranceWalkOut.position[2], feetY: entranceWalkOut.feetY },
+    entranceWalkIn: { z: entranceWalkIn.position[2], feetY: entranceWalkIn.feetY },
+    rampSupports: { high: rampHighSupport, low: rampLowSupport },
+  },
   monumentStops: [monumentFront.z, monumentRear.z],
-  buildingStop: building.z,
-  wingStop: wing.z,
-  wallSlides: { monument: sliding, building: buildingSlide },
+  rearTraversal: rearTraversal.z,
+  rearWingTraversal: rearWingTraversal.z,
+  wallSlides: { monument: sliding, rearDiagonalTraversal },
   plinthLanding,
   lightingDirection: direction,
   result: "passed",

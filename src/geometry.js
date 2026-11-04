@@ -31,7 +31,7 @@ function finish(buffers) {
   };
 }
 
-export function createBoxGeometry(dimensions = [1, 1, 1]) {
+export function createBoxGeometry(dimensions = [1, 1, 1], { omitTopFace = false } = {}) {
   const buffers = createBuffers();
   const uvFor = (point, axes) => [
     (point[axes[0]] + 0.5) * dimensions[axes[0]],
@@ -46,9 +46,72 @@ export function createBoxGeometry(dimensions = [1, 1, 1]) {
     { normal: [0, -1, 0], axes: [0, 2], points: [[-.5, -.5, -.5], [.5, -.5, -.5], [.5, -.5, .5], [-.5, -.5, .5]] },
   ];
   for (const face of faces) {
+    if (omitTopFace && face.normal[1] > 0) continue;
     pushQuad(buffers, ...face.points, face.normal, face.points.map(point => uvFor(point, face.axes)));
   }
   return finish(buffers);
+}
+
+export function createApronGridGeometry(dimensions, groutCount, groutWidth, rowGroutCount = groutCount) {
+  if (
+    !Array.isArray(dimensions)
+    || dimensions.length !== 3
+    || !dimensions.every(Number.isFinite)
+    || dimensions[0] <= 0
+    || dimensions[2] <= 0
+    || !Number.isInteger(groutCount)
+    || groutCount < 0
+    || !Number.isInteger(rowGroutCount)
+    || rowGroutCount < 0
+    || !Number.isFinite(groutWidth)
+    || groutWidth < 0
+  ) {
+    throw new Error("An apron grid needs positive dimensions, non-negative horizontal and vertical grout counts, and a non-negative grout width.");
+  }
+
+  const xCellCount = groutCount + 1;
+  const zCellCount = rowGroutCount + 1;
+  const xPitch = 1 / xCellCount;
+  const zPitch = 1 / zCellCount;
+  const halfGapX = groutWidth / dimensions[0] / 2;
+  const halfGapZ = groutWidth / dimensions[2] / 2;
+  if (halfGapX * 2 >= xPitch || halfGapZ * 2 >= zPitch) {
+    throw new Error("Apron grout must be narrower than the tile spacing.");
+  }
+
+  const intervals = (groutLines, halfGap) => {
+    const cellCount = groutLines + 1;
+    const pitch = 1 / cellCount;
+    const result = [];
+    for (let cell = 0; cell < cellCount; cell += 1) {
+      const left = -0.5 + cell * pitch;
+      const right = left + pitch;
+      result.push({ kind: "tile", min: left + (cell === 0 ? 0 : halfGap), max: right - (cell === groutLines ? 0 : halfGap) });
+      if (cell < groutLines) {
+        result.push({ kind: "grout", min: right - halfGap, max: right + halfGap });
+      }
+    }
+    return result;
+  };
+
+  const xIntervals = intervals(groutCount, halfGapX);
+  const zIntervals = intervals(rowGroutCount, halfGapZ);
+  const tiles = createBuffers();
+  const grout = createBuffers();
+  const appendSurface = (buffers, x0, x1, z0, z1) => {
+    const points = [[x0, 0, z1], [x1, 0, z1], [x1, 0, z0], [x0, 0, z0]];
+    const uvs = points.map(([x, , z]) => [(x + 0.5) * dimensions[0], (z + 0.5) * dimensions[2]]);
+    pushQuad(buffers, ...points, [0, 1, 0], uvs);
+  };
+
+  for (const x of xIntervals) {
+    for (const z of zIntervals) {
+      const buffers = x.kind === "grout" || z.kind === "grout" ? grout : tiles;
+      appendSurface(buffers, x.min, x.max, z.min, z.max);
+    }
+  }
+
+  return { tiles: finish(tiles), grout: finish(grout) };
 }
 
 export function createDiscGeometry(radius = 1, segments = 48) {
@@ -61,6 +124,221 @@ export function createDiscGeometry(radius = 1, segments = 48) {
     const next = [Math.cos(a1) * radius, 0, Math.sin(a1) * radius];
     pushTriangle(buffers, center, next, current, [0, 1, 0], [[0, 0], [next[0], next[2]], [current[0], current[2]]]);
   }
+  return finish(buffers);
+}
+
+export function createCircleContour(radius, segments = 128) {
+  if (!Number.isFinite(radius) || radius <= 0 || !Number.isInteger(segments) || segments < 3) {
+    throw new Error("A circle contour needs a positive radius and at least three segments.");
+  }
+  return Array.from({ length: segments }, (_, index) => {
+    const angle = (index / segments) * Math.PI * 2;
+    return [Math.cos(angle) * radius, Math.sin(angle) * radius];
+  });
+}
+
+function intervalsAt(contour, coordinate) {
+  const intersections = [];
+  for (let index = 0; index < contour.length; index += 1) {
+    const a = contour[index];
+    const b = contour[(index + 1) % contour.length];
+    const low = Math.min(a[1], b[1]);
+    const high = Math.max(a[1], b[1]);
+    if (coordinate < low || coordinate >= high || Math.abs(b[1] - a[1]) < 1e-10) continue;
+    const amount = (coordinate - a[1]) / (b[1] - a[1]);
+    intersections.push({ x: a[0] + (b[0] - a[0]) * amount, edge: { a, b } });
+  }
+  intersections.sort((left, right) => left.x - right.x);
+  const result = [];
+  for (let index = 0; index + 1 < intersections.length; index += 2) {
+    const left = intersections[index];
+    const right = intersections[index + 1];
+    if (right.x - left.x > 1e-9) result.push({ left: left.edge, right: right.edge, leftX: left.x, rightX: right.x });
+  }
+  return result;
+}
+
+function edgeIntersectionCoordinate(first, second, third, fourth) {
+  const firstVector = [second[0] - first[0], second[1] - first[1]];
+  const secondVector = [fourth[0] - third[0], fourth[1] - third[1]];
+  const offset = [third[0] - first[0], third[1] - first[1]];
+  const cross = (left, right) => left[0] * right[1] - left[1] * right[0];
+  const denominator = cross(firstVector, secondVector);
+  if (Math.abs(denominator) < 1e-10) return null;
+  const firstAmount = cross(offset, secondVector) / denominator;
+  const secondAmount = cross(offset, firstVector) / denominator;
+  if (firstAmount <= 1e-9 || firstAmount >= 1 - 1e-9 || secondAmount <= 1e-9 || secondAmount >= 1 - 1e-9) return null;
+  return first[1] + firstAmount * firstVector[1];
+}
+
+function edgeXAt(edge, coordinate) {
+  const { a, b } = edge;
+  const amount = (coordinate - a[1]) / (b[1] - a[1]);
+  return a[0] + (b[0] - a[0]) * amount;
+}
+
+function subtractIntervals(outerIntervals, holeIntervals) {
+  const result = [];
+  for (const outer of outerIntervals) {
+    const clips = holeIntervals
+      .filter((hole) => hole.rightX > outer.leftX + 1e-9 && hole.leftX < outer.rightX - 1e-9)
+      .sort((left, right) => left.leftX - right.leftX);
+    let cursorX = outer.leftX;
+    let cursorEdge = outer.left;
+    for (const clip of clips) {
+      const clipLeftX = Math.max(outer.leftX, clip.leftX);
+      const clipRightX = Math.min(outer.rightX, clip.rightX);
+      if (clipLeftX > cursorX + 1e-9) result.push({ left: cursorEdge, right: clip.left, leftX: cursorX, rightX: clipLeftX });
+      if (clipRightX > cursorX) {
+        cursorX = clipRightX;
+        cursorEdge = clip.right;
+      }
+      if (cursorX >= outer.rightX - 1e-9) break;
+    }
+    if (cursorX < outer.rightX - 1e-9) {
+      result.push({ left: cursorEdge, right: outer.right, leftX: cursorX, rightX: outer.rightX });
+    }
+  }
+  return result;
+}
+
+/** Build a flat polygon field with disjoint cutouts using scanline strips. */
+export function createPolygonFieldGeometry(outerContour, holeContours = [], { axis = "z", range = null } = {}) {
+  if (axis !== "z" && axis !== "x") throw new Error("A polygon field axis must be x or z.");
+  const validateContour = (contour) => {
+    if (!Array.isArray(contour) || contour.length < 3 || contour.some((point) =>
+      !Array.isArray(point) || point.length < 2 || !Number.isFinite(point[0]) || !Number.isFinite(point[1]))) {
+      throw new Error("A polygon field needs finite contours with at least three points.");
+    }
+    return contour.map(([x, z]) => axis === "x" ? [z, x] : [x, z]);
+  };
+  if (range && (!Array.isArray(range) || range.length !== 2 || !range.every(Number.isFinite) || range[1] <= range[0])) {
+    throw new Error("A polygon field range must be a finite increasing pair.");
+  }
+
+  const outer = validateContour(outerContour);
+  const holes = holeContours.map(validateContour);
+  const boundaries = [outer, ...holes].flat();
+  let minCoordinate = range?.[0] ?? -Infinity;
+  let maxCoordinate = range?.[1] ?? Infinity;
+  if (!range) {
+    minCoordinate = Math.min(...boundaries.map((point) => point[1]));
+    maxCoordinate = Math.max(...boundaries.map((point) => point[1]));
+  }
+  const levels = boundaries.map((point) => point[1]).filter((value) => value > minCoordinate && value < maxCoordinate);
+  for (const hole of holes) {
+    for (let outerIndex = 0; outerIndex < outer.length; outerIndex += 1) {
+      const outerStart = outer[outerIndex];
+      const outerEnd = outer[(outerIndex + 1) % outer.length];
+      for (let holeIndex = 0; holeIndex < hole.length; holeIndex += 1) {
+        const holeStart = hole[holeIndex];
+        const holeEnd = hole[(holeIndex + 1) % hole.length];
+        const crossing = edgeIntersectionCoordinate(outerStart, outerEnd, holeStart, holeEnd);
+        if (crossing !== null && crossing > minCoordinate && crossing < maxCoordinate) levels.push(crossing);
+      }
+    }
+  }
+  levels.push(minCoordinate, maxCoordinate);
+  const sortedLevels = [...new Set(levels)].sort((left, right) => left - right);
+  const buffers = createBuffers();
+  for (let strip = 0; strip + 1 < sortedLevels.length; strip += 1) {
+    const z0 = sortedLevels[strip];
+    const z1 = sortedLevels[strip + 1];
+    if (!Number.isFinite(z0) || !Number.isFinite(z1) || z1 - z0 < 1e-9) continue;
+    const middle = (z0 + z1) / 2;
+    const outside = intervalsAt(outer, middle);
+    const cutouts = holes.flatMap((contour) => intervalsAt(contour, middle));
+    for (const interval of subtractIntervals(outside, cutouts)) {
+      const left0 = edgeXAt(interval.left, z0);
+      const left1 = edgeXAt(interval.left, z1);
+      const right0 = edgeXAt(interval.right, z0);
+      const right1 = edgeXAt(interval.right, z1);
+      const leftBottom = [left0, 0, z0];
+      const leftTop = [left1, 0, z1];
+      const rightBottom = [right0, 0, z0];
+      const rightTop = [right1, 0, z1];
+      const normal = [0, 1, 0];
+      pushTriangle(buffers, leftBottom, leftTop, rightTop, normal, [[left0, z0], [left1, z1], [right1, z1]]);
+      pushTriangle(buffers, leftBottom, rightTop, rightBottom, normal, [[left0, z0], [right1, z1], [right0, z0]]);
+    }
+  }
+
+  const geometry = finish(buffers);
+  if (axis === "x") {
+    for (let index = 0; index < geometry.positions.length; index += 3) {
+      [geometry.positions[index], geometry.positions[index + 2]] = [geometry.positions[index + 2], geometry.positions[index]];
+    }
+    for (let index = 0; index < geometry.uvs.length; index += 2) {
+      [geometry.uvs[index], geometry.uvs[index + 1]] = [geometry.uvs[index + 1], geometry.uvs[index]];
+    }
+  }
+  return geometry;
+}
+
+/** Extrude a flat polygon field with a controlled set of vertical boundary walls. */
+export function createExtrudedPolygonFieldGeometry(
+  outerContour,
+  holeContours = [],
+  depth = 0.08,
+  sideContours = [{ contour: outerContour, isHole: false }],
+) {
+  if (!Number.isFinite(depth) || depth <= 0) {
+    throw new Error("An extruded polygon field needs a positive finite depth.");
+  }
+  const top = createPolygonFieldGeometry(outerContour, holeContours);
+  const buffers = createBuffers();
+  const halfDepth = depth / 2;
+  const topPoint = (index) => [top.positions[index * 3], halfDepth, top.positions[index * 3 + 2]];
+  const bottomPoint = (index) => [top.positions[index * 3], -halfDepth, top.positions[index * 3 + 2]];
+  const uv = (index) => [top.uvs[index * 2], top.uvs[index * 2 + 1]];
+
+  for (let index = 0; index < top.vertexCount; index += 3) {
+    pushTriangle(buffers, topPoint(index), topPoint(index + 1), topPoint(index + 2), [0, 1, 0], [uv(index), uv(index + 1), uv(index + 2)]);
+    pushTriangle(buffers, bottomPoint(index), bottomPoint(index + 2), bottomPoint(index + 1), [0, -1, 0], [uv(index), uv(index + 2), uv(index + 1)]);
+  }
+
+  const appendBoundary = (contour, isHole) => {
+    const signedArea = contour.reduce((sum, point, index) => {
+      const next = contour[(index + 1) % contour.length];
+      return sum + point[0] * next[1] - next[0] * point[1];
+    }, 0) / 2;
+    for (let index = 0; index < contour.length; index += 1) {
+      const from = contour[index];
+      const to = contour[(index + 1) % contour.length];
+      const dx = to[0] - from[0];
+      const dz = to[1] - from[1];
+      const length = Math.hypot(dx, dz);
+      if (length < 1e-9) continue;
+      const winding = signedArea >= 0 ? 1 : -1;
+      const holeSign = isHole ? -1 : 1;
+      const normal = [winding * holeSign * dz / length, 0, -winding * holeSign * dx / length];
+      const a = [from[0], halfDepth, from[1]];
+      const b = [to[0], halfDepth, to[1]];
+      const c = [to[0], -halfDepth, to[1]];
+      const d = [from[0], -halfDepth, from[1]];
+      pushQuad(buffers, a, b, c, d, normal, [[from[0], 0], [to[0], 0], [to[0], depth], [from[0], depth]]);
+    }
+  };
+
+  for (const boundary of sideContours) appendBoundary(boundary.contour, Boolean(boundary.isHole));
+  return finish(buffers);
+}
+
+export function createRampSurfaceGeometry(width, depth, lowY, highY) {
+  if (![width, depth, lowY, highY].every(Number.isFinite) || width <= 0 || depth <= 0 || highY < lowY) {
+    throw new Error("A ramp surface needs positive dimensions and an ascending height pair.");
+  }
+  const halfWidth = width / 2;
+  const halfDepth = depth / 2;
+  const rearLeft = [-halfWidth, highY, -halfDepth];
+  const rearRight = [halfWidth, highY, -halfDepth];
+  const frontLeft = [-halfWidth, lowY, halfDepth];
+  const frontRight = [halfWidth, lowY, halfDepth];
+  const normalLength = Math.hypot(depth, highY - lowY);
+  const normal = [0, depth / normalLength, (highY - lowY) / normalLength];
+  const buffers = createBuffers();
+  pushTriangle(buffers, rearLeft, frontLeft, frontRight, normal, [[0, 0], [0, depth], [width, depth]]);
+  pushTriangle(buffers, rearLeft, frontRight, rearRight, normal, [[0, 0], [width, depth], [width, 0]]);
   return finish(buffers);
 }
 

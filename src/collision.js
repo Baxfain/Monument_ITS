@@ -92,11 +92,17 @@ function triangleContainsCircle(triangle, x, z, radius) {
   return false;
 }
 
-function annulusRadii(geometry) {
+function annulusRadii(node) {
   let innerRadius = Infinity;
   let outerRadius = 0;
-  for (let index = 0; index < geometry.positions.length; index += 3) {
-    const radius = Math.hypot(geometry.positions[index], geometry.positions[index + 2]);
+  for (let index = 0; index < node.geometry.positions.length; index += 3) {
+    const point = transformPoint(
+      node.objectToConstruction,
+      node.geometry.positions[index],
+      node.geometry.positions[index + 1],
+      node.geometry.positions[index + 2],
+    );
+    const radius = Math.hypot(point[0], point[2]);
     innerRadius = Math.min(innerRadius, radius);
     outerRadius = Math.max(outerRadius, radius);
   }
@@ -140,14 +146,15 @@ export class CollisionWorld {
   }
 
   #build(node, parentWorld) {
-    const world = Mat4.multiply(parentWorld, node.localMatrix());
-    if (node.geometry && node.collision) {
-      const bounds = worldBounds(node.geometry, world);
+    const world = node.worldMatrix(parentWorld);
+    if (node.geometry && node.geometry.positions.length > 0 && node.collision) {
+      const geometryWorld = node.worldGeometryMatrix(parentWorld);
+      const bounds = worldBounds(node.geometry, geometryWorld);
       if (node.collision.perimeter) this.mapBounds = bounds;
       if (node.collision.solid) {
         const collider = { name: node.name, bounds, shape: node.collision.shape ?? "box" };
         if (collider.shape === "annulus") {
-          const radii = annulusRadii(node.geometry);
+          const radii = annulusRadii(node);
           const scaleX = Math.hypot(world[0], world[2]);
           const scaleZ = Math.hypot(world[8], world[10]);
           const radiusScale = (scaleX + scaleZ) / 2;
@@ -158,12 +165,12 @@ export class CollisionWorld {
         this.colliders.push(collider);
         this.colliderByName.set(node.name, collider);
       }
-      if (node.collision.surface) this.#addSurfaceTriangles(node, world);
+      if (node.collision.surface) this.#addSurfaceTriangles(node, world, geometryWorld);
     }
     for (const child of node.children) this.#build(child, world);
   }
 
-  #addSurfaceTriangles(node, world) {
+  #addSurfaceTriangles(node, world, geometryWorld) {
     const positions = node.geometry.positions;
     const normals = node.geometry.normals;
     const normalMatrix = normalMatrixFromMat4(world);
@@ -174,7 +181,7 @@ export class CollisionWorld {
       let nz = 0;
       for (let vertex = 0; vertex < 3; vertex += 1) {
         const offset = index + vertex * 3;
-        points.push(transformPoint(world, positions[offset], positions[offset + 1], positions[offset + 2]));
+        points.push(transformPoint(geometryWorld, positions[offset], positions[offset + 1], positions[offset + 2]));
         const normalOffset = offset;
         const normal = transformNormal(normalMatrix, normals[normalOffset], normals[normalOffset + 1], normals[normalOffset + 2]);
         nx += normal[0];

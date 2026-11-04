@@ -6,6 +6,8 @@
     "check:layout": "node scripts/verify_layout.mjs",
     "check:physics": "node scripts/verify_physics.mjs",
     "check:landing": "node scripts/verify_solid_landing.mjs",
-    "check:look": "node scripts/verify_look_input.mjs"
+    "check:look": "node scripts/verify_look_input.mjs",
+    "check:normalization": "node scripts/verify_normalization.mjs",
+    "check:normalization:browser": "node scripts/verify_normalization_browser.mjs"
   }
 }

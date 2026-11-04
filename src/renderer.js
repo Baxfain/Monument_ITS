@@ -277,11 +277,13 @@ export class Renderer {
   drawNode(node, parentWorld) {
     if (!node.visible) return;
     const gl = this.gl;
-    const world = Mat4.multiply(parentWorld, node.localMatrix());
+    const world = node.worldMatrix(parentWorld);
     if (node.geometry && node.material) {
       const mesh = this.meshCache.get(node.geometry);
       gl.bindVertexArray(mesh.vao);
-      gl.uniformMatrix4fv(this.locations.model, false, world);
+      gl.uniformMatrix4fv(this.locations.model, false, node.worldGeometryMatrix(parentWorld));
+      // The intrinsic geometry scale is uniform; keep its magnitude out of the
+      // normal matrix so world-space wind bending retains its previous strength.
       gl.uniformMatrix3fv(this.locations.normalMatrix, false, normalMatrixFromMat4(world));
       gl.uniform3fv(this.locations.baseColor, node.material.color);
       gl.uniform1f(this.locations.shininess, node.material.shininess ?? CONFIG.lighting.shininess);

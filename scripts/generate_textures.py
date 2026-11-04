@@ -112,6 +112,23 @@ def make_gravel(base: list[int]) -> np.ndarray:
     return np.asarray(image)
 
 
+def make_patchy_lawn() -> np.ndarray:
+    """Blend tileable dry grass and green patches with sparse fine grain."""
+    rng = np.random.default_rng(241)
+    broad = (
+        periodic_noise(SIZE, 4, rng) * 0.58
+        + periodic_noise(SIZE, 9, rng) * 0.30
+        + periodic_noise(SIZE, 19, rng) * 0.12
+    )
+    moisture = np.clip((broad + 0.72) / 1.44, 0.0, 1.0)
+    moisture = moisture * moisture * (3.0 - 2.0 * moisture)
+    dry = np.asarray([153, 132, 79], dtype=np.float32)
+    green = np.asarray([94, 119, 58], dtype=np.float32)
+    grain = np.random.default_rng(1241).normal(0.0, 5.0, (SIZE, SIZE)).astype(np.float32)
+    rgb = dry[None, None, :] * (1.0 - moisture[:, :, None]) + green[None, None, :] * moisture[:, :, None]
+    return np.clip(rgb + grain[:, :, None], 0, 255).astype(np.uint8)
+
+
 def main() -> None:
     OUTPUT.mkdir(parents=True, exist_ok=True)
     palette = {name: sample_median(*sample) for name, sample in SAMPLES.items()}
@@ -139,6 +156,7 @@ def main() -> None:
 
     ground = make_base_texture(palette["ground"], seed=227, amplitude=12.0, fine=5.0)
     save_rgb("grass-ground.png", ground)
+    save_rgb("patchy-lawn.png", make_patchy_lawn())
 
     save_rgb("gravel.png", make_gravel(palette["gravel"]))
     (OUTPUT / "palette.json").write_text(json.dumps({
@@ -153,7 +171,7 @@ def main() -> None:
             for name, (filename, x, y) in SAMPLES.items()
         },
     }, indent=2) + "\n")
-    print(f"Generated seven tileable textures in {OUTPUT.relative_to(ROOT)} from {len(SAMPLES)} documented photo samples.")
+    print(f"Generated eight tileable textures in {OUTPUT.relative_to(ROOT)} from {len(SAMPLES)} documented photo samples.")
 
 
 if __name__ == "__main__":
