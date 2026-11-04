@@ -96,34 +96,33 @@ const plaza = CONFIG.plaza;
 const groundY = plaza.groundTopY;
 const paverY = plaza.paverTopY;
 const soilY = CONFIG.plants.soilSurfaceY;
-const lawnY = plaza.islandLawnTopY;
 const outsidePlazaSupport = supportAt(0, plaza.outerPavingRadius + 1);
 near(outsidePlazaSupport.y, groundY, 0.002, "grass supports the camera outside the circular plaza");
 assert.equal(outsidePlazaSupport.name, "GroundPlane", "no tiled surface remains outside the circular plaza");
 const soilSupport = supportAt(5.15, 0);
-near(soilSupport.y, soilY, 0.002, "a rectangular side bed supports the camera on its soil");
+near(soilSupport.y, soilY, 0.002, "a curved side bed supports the camera on its soil");
 const frontBed = CONFIG.plants.plantingPockets.find((pocket) => pocket.name.startsWith("FrontArcSoilBed"));
 const rearBed = CONFIG.plants.plantingPockets.find((pocket) => pocket.name.startsWith("RearArcSoilBed"));
-const frontArcSupport = supportAt(...frontBed.clusters[0].position);
-const rearArcSupport = supportAt(...rearBed.clusters[0].position);
-near(frontArcSupport.y, soilY, 0.002, "a front rectangular planting bed supports the camera on its soil");
-near(rearArcSupport.y, soilY, 0.002, "a rear rectangular planting bed supports the camera on its soil");
+const frontArcSupport = supportAt(...frontBed.clusters[0].position, 0.01);
+const rearArcSupport = supportAt(...rearBed.clusters[0].position, 0.01);
+near(frontArcSupport.y, soilY, 0.01, "the connected front planting bed supports the camera on its soil");
+near(rearArcSupport.y, soilY, 0.01, "the connected rear planting bed supports the camera on its soil");
 assert.equal(frontArcSupport.name, `${frontBed.name}SoilSurface`);
 assert.equal(rearArcSupport.name, `${rearBed.name}SoilSurface`);
-const lawnSupport = supportAt(3.2, -3.1);
-near(lawnSupport.y, lawnY, 0.002, "the rear-right patchy lawn supports the camera at island height");
+const pavingSupport = supportAt(2.6, -2.8);
+near(pavingSupport.y, paverY, 0.002, "pavers support the camera where the overlapping lawn was removed");
 const curbCrossing = cameraAt(-8.79, -3, Math.PI / 2);
 curbCrossing.update(1, 0, 2);
 assert.ok(curbCrossing.position[0] > -6.6, "walking crosses the circular outer curb from the surrounding ground");
 near(curbCrossing.feetY, paverY, 0.01, "the camera settles onto the raised pavers after stepping over the curb");
 
-const lawnPath = world.moveHorizontal(3.2, -3.1, -0.1, 0, {
-  feetY: lawnSupport.y,
+const pavingPath = world.moveHorizontal(2.6, -2.8, 0.1, 0, {
+  feetY: pavingSupport.y,
   bodyHeight: standingHeight,
   radius,
 });
-near(lawnPath.x, 3.1, 0.004, "grass remains passable across the rear-right lawn");
-near(supportAt(lawnPath.x, lawnPath.z).y, lawnY, 0.002, "lawn traversal keeps continuous support");
+near(pavingPath.x, 2.7, 0.004, "pavers remain passable across the former lawn area");
+near(supportAt(pavingPath.x, pavingPath.z).y, paverY, 0.002, "paving traversal keeps continuous support");
 
 const outsideGroundPath = cameraAt(0, plaza.outerPavingRadius + 1, Math.PI / 2);
 outsideGroundPath.update(1, 0, 0.8);
@@ -149,12 +148,12 @@ assert.equal(jumper.jumpQueued, false, "midair repeated press does not queue a s
 assert.ok(airborneHeightChanged, "gravity advances the camera with zero movement input");
 assert.ok(jumpApex > jumpGround + 0.6 && jumpApex < jumpGround + 0.9, "jump apex is bounded by velocity and gravity");
 
-const lawnJumper = cameraAt(3.2, -3.1);
-const lawnJumpGround = lawnJumper.feetY;
-lawnJumper.update(0, 0, 1 / 120, { jumpPressed: true });
-for (let index = 0; index < 180; index += 1) lawnJumper.update(0, 0, 1 / 120);
-near(lawnJumper.feetY, lawnJumpGround, 0.002, "a jump lands back on the patchy lawn support surface");
-assert.equal(lawnJumper.grounded, true, "the patchy lawn remains a valid landing surface");
+const pavingJumper = cameraAt(2.6, -2.8);
+const pavingJumpGround = pavingJumper.feetY;
+pavingJumper.update(0, 0, 1 / 120, { jumpPressed: true });
+for (let index = 0; index < 180; index += 1) pavingJumper.update(0, 0, 1 / 120);
+near(pavingJumper.feetY, pavingJumpGround, 0.002, "a jump lands back on paving where the lawn was removed");
+assert.equal(pavingJumper.grounded, true, "the former lawn area remains a valid paving landing surface");
 
 const monumentFront = world.moveHorizontal(0, 3, 0, -10, { feetY: supportAt(0, 3).y, bodyHeight: standingHeight, radius });
 assert.ok(monumentFront.z > 0.55, "high-displacement move cannot tunnel through monument");
@@ -238,11 +237,11 @@ process.stdout.write(JSON.stringify({
     soilY,
     frontArcSupport,
     rearArcSupport,
-    lawnY,
+    pavingSupport,
     paverY,
     curbCrossing: { x: curbCrossing.position[0], feetY: curbCrossing.feetY },
-    lawnPath,
-    lawnJump: { ground: lawnJumpGround, landed: lawnJumper.feetY },
+    pavingPath,
+    pavingJump: { ground: pavingJumpGround, landed: pavingJumper.feetY },
     outsideGroundPath: { x: outsideGroundPath.position[0], z: outsideGroundPath.position[2], feetY: outsideGroundPath.feetY },
   },
   monumentStops: [monumentFront.z, monumentRear.z],

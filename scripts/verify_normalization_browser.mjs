@@ -175,7 +175,7 @@ try {
     };
   });
   assert.equal(audit.glVersion.includes("WebGL 2.0"), true);
-  assert.equal(audit.meshNodes, 525);
+  assert.equal(audit.meshNodes, 716);
   assert.equal(audit.uniqueGeometryCount, audit.cachedMeshCount);
   assert.equal(audit.uniqueCpuPositionComponents, audit.gpuPositionComponents);
   assert.deepEqual(audit.objectSpaceRange, [-1, 1]);

@@ -251,58 +251,135 @@ const soilPocketNodes = planting.children.filter((node) => pocketSettings.some((
 assert.equal(soilPocketNodes.length, pocketSettings.length, "each configured planting pocket has its own landscape group");
 const frontArcBeds = pocketSettings.filter((pocket) => pocket.name.startsWith("FrontArcSoilBed"));
 const rearArcBeds = pocketSettings.filter((pocket) => pocket.name.startsWith("RearArcSoilBed"));
-assert.equal(frontArcBeds.length, 6, "the front arc has six separate rectangular soil beds");
-assert.equal(rearArcBeds.length, 6, "the rear arc has six separate rectangular soil beds");
+assert.equal(frontArcBeds.length, 1, "the front row uses one connected curved soil bed");
+assert.equal(rearArcBeds.length, 1, "the rear row uses one connected curved soil bed");
 const frontClusters = frontArcBeds.flatMap((bed) => bed.clusters);
 const rearClusters = rearArcBeds.flatMap((bed) => bed.clusters);
-assert.equal(frontClusters.length, 6, "the front arc keeps six plant clusters");
-assert.equal(rearClusters.length, 6, "the rear arc keeps six plant clusters");
+assert.equal(frontClusters.length, 12, "front rosettes fill three radial rows across the entire soil bed");
+assert.equal(rearClusters.length, 12, "rear plants fill three radial rows across the entire soil bed");
 const polygonArea = (contour) => Math.abs(contour.reduce((sum, [x, z], index) => {
   const [nextX, nextZ] = contour[(index + 1) % contour.length];
   return sum + x * nextZ - nextX * z;
 }, 0)) / 2;
-const frontSoilArea = frontArcBeds.reduce((sum, bed) => sum + polygonArea(bed.contour), 0);
-const rearSoilArea = rearArcBeds.reduce((sum, bed) => sum + polygonArea(bed.contour), 0);
-assert.ok(frontSoilArea < rearSoilArea * 0.6, "the front soil area stays much smaller than the rear beds");
-assert.ok(frontClusters.every((cluster) => cluster.height[1] <= 0.5), "front plants remain very short and compact");
-assert.ok(rearClusters.every((cluster) => cluster.height[1] <= 0.7 && cluster.species === "rust"), "rear plants stay short and use the distinct russet species");
-assert.ok(rearClusters.every((cluster) => cluster.height[0] > frontClusters[0].height[1]), "rear plants are visibly taller than front plants");
-const curbInnerRadius = baselineConfig.plaza.outerPavingRadius - baselineConfig.plaza.outerCircularCurb.width / 2;
-for (const bed of [...frontArcBeds, ...rearArcBeds]) {
-  const forwardSign = bed.name.startsWith("FrontArcSoilBed") ? 1 : -1;
-  for (const [index, [x, z]] of bed.contour.entries()) {
+assert.ok(polygonArea(frontArcBeds[0].contour) > 1, "the four front plants share a single connected soil area");
+assert.ok(frontClusters.every((cluster) =>
+  cluster.species === "dark-spread"
+    && cluster.leaves === 28
+    && cluster.height[0] >= 0.25
+    && cluster.height[1] <= 0.37
+    && cluster.bend[1] >= 0.19
+    && cluster.width[0] >= 0.045
+    && cluster.stem === null),
+"front plants use short, dark-green, laterally spreading leaves without stems");
+assert.ok(rearClusters.every((cluster) =>
+  cluster.height[0] >= 0.5 && cluster.leaves === 13 && cluster.species === "rust"),
+"rear plants are taller and retain their distinct russet species");
+const curbInnerRadius = baselineConfig.plaza.outerPavingRadius;
+const frontBed = frontArcBeds[0];
+const rearBed = rearArcBeds[0];
+for (const bed of [frontBed, rearBed]) {
+  const forwardSign = bed === frontBed ? 1 : -1;
+  for (const [x, z] of bed.contour) {
     const radius = Math.hypot(x, z);
-    assert.ok(radius < curbInnerRadius - 0.15, `${bed.name} soil stops before the dark outer curb`);
+    assert.ok(radius >= bed.innerRadius - tolerance && radius <= bed.outerRadius + tolerance, `${bed.name} soil follows the circular band`);
+    assert.ok(radius <= curbInnerRadius - 0.02 + tolerance, `${bed.name} soil reaches the outer circle just before the dark curb`);
     assert.ok(z * forwardSign > 0, `${bed.name} soil stays on its side of the monument`);
-    const next = bed.contour[(index + 1) % bed.contour.length];
-    assert.ok(Math.hypot(next[0] - x, next[1] - z) < 1, `${bed.name} remains a compact rectangular soil patch`);
   }
 }
 const sidePlantBlocks = pocketSettings.filter((pocket) => pocket.name.startsWith("SidePlantBlock"));
-assert.equal(sidePlantBlocks.length, 6, "three rectangular soil beds remain on each monument side");
+const plantingBlocks = [frontBed, ...sidePlantBlocks, rearBed];
+assert.equal(sidePlantBlocks.length, 6, "three curved soil blocks remain on each monument side");
 assert.equal(sidePlantBlocks.filter((block) => block.contour.reduce((sum, [x]) => sum + x, 0) > 0).length, 3, "three separated plant blocks sit on the east side");
 assert.equal(sidePlantBlocks.filter((block) => block.contour.reduce((sum, [x]) => sum + x, 0) < 0).length, 3, "three separated plant blocks sit on the west side");
-for (const block of sidePlantBlocks) {
-  assert.equal(block.contour.length, 4, `${block.name} soil has a rectangular footprint`);
-  assert.equal(block.clusters.length, 1, `${block.name} keeps its own separated plant cluster`);
-  assert.equal(block.shape, "rectangle", `${block.name} is soil rather than a floor motif`);
-  const edges = block.contour.map(([x, z], index) => {
-    const [nextX, nextZ] = block.contour[(index + 1) % block.contour.length];
-    return Math.hypot(nextX - x, nextZ - z);
-  });
-  near(edges[0], block.tangentialWidth, `${block.name} has its configured tangential width`);
-  near(edges[1], block.radialDepth, `${block.name} has its configured radial depth`);
-  near(edges[2], edges[0], `${block.name} keeps parallel rectangular edges`);
-  near(edges[3], edges[1], `${block.name} keeps parallel rectangular edges`);
+const variegatedShrubBlocks = sidePlantBlocks.filter((block) =>
+  [Math.PI * 7 / 4, Math.PI * 3 / 4].some((angle) => Math.abs(block.centerAngle - angle) < tolerance));
+assert.equal(variegatedShrubBlocks.length, 2, "plant blocks numbered two and six use the shrub planting style");
+for (const block of variegatedShrubBlocks) {
+  assert.equal(block.clusters.length, 12, `${block.name} shrubs spread across the full bed`);
+  assert.ok(block.clusters.every((shrub) =>
+    shrub.species === "variegated-shrub"
+      && shrub.leaves === 100
+      && shrub.height[0] >= 0.3
+      && shrub.rootSpread >= 0.18
+      && shrub.width[0] <= 0.025
+      && shrub.stem?.height[0] >= 0.1
+      && shrub.leafBaseHeight > 0),
+  `${block.name} has hidden thin stems and dense, small leaves that cover the soil`);
+  for (const [clusterIndex] of block.clusters.entries()) {
+    const clusterNode = findNode(findNode(planting, block.name), `LeafCluster${String(clusterIndex + 1).padStart(2, "0")}`);
+    const foliage = clusterNode.children;
+    const stem = findNode(clusterNode, "PlantStem");
+    assert.ok(stem, `${block.name} cluster ${clusterIndex + 1} has a subtle stem`);
+    assert.deepEqual(stem.material, baselineConfig.materials.plantStem, `${block.name} cluster ${clusterIndex + 1} uses stem material`);
+    assert.ok(foliage.some((node) =>
+      JSON.stringify(node.material) === JSON.stringify(baselineConfig.materials.leafCream)),
+    `${block.name} foliage includes the pale variegation from the reference`);
+  }
 }
+for (const block of sidePlantBlocks) {
+  assert.ok(block.contour.length > 4, `${block.name} soil follows an arc-shaped block footprint`);
+  assert.equal(block.clusters.length, 12, `${block.name} plants span the complete soil block`);
+  assert.ok(block.clusters.every((cluster) =>
+    cluster.species === "variegated-shrub" || cluster.height[0] >= 0.37),
+  `${block.name} default plants grow taller while variegated shrubs stay compact`);
+  assert.equal(block.shape, "annular-sector", `${block.name} soil follows the circle instead of becoming a trapezoid`);
+}
+const rearStemBed = findNode(planting, rearBed.name);
+for (let index = 0; index < rearBed.clusters.length; index += 1) {
+  const cluster = rearBed.clusters[index];
+  const clusterNode = findNode(rearStemBed, `LeafCluster${String(index + 1).padStart(2, "0")}`);
+  const stem = findNode(clusterNode, "PlantStem");
+  assert.ok(stem, `rear plant ${index + 1} has its own thin wooden stem`);
+  near(stem.scale[0], cluster.stem.radius * 2, `rear plant ${index + 1} stem thickness`);
+  assert.ok(clusterNode.children.some((node) =>
+    [baselineConfig.materials.leafRust, baselineConfig.materials.leafRustLight].some((material) =>
+      JSON.stringify(node.material) === JSON.stringify(material))),
+  `rear plant ${index + 1} retains its reddish pointed foliage`);
+}
+for (const block of plantingBlocks) {
+  const radialRows = new Set(block.clusters.map((cluster) =>
+    Math.round((Math.hypot(...cluster.position) - block.innerRadius) / (block.outerRadius - block.innerRadius) * 100)));
+  const angularColumns = new Set(block.clusters.map((cluster) =>
+    Math.round(Math.atan2(
+      Math.sin(Math.atan2(cluster.position[0], cluster.position[1]) - block.centerAngle),
+      Math.cos(Math.atan2(cluster.position[0], cluster.position[1]) - block.centerAngle),
+    ) / block.halfAngle * 100)));
+  assert.equal(radialRows.size, 3, `${block.name} has plant roots across the soil depth`);
+  assert.equal(angularColumns.size, 4, `${block.name} has plant roots across the soil width`);
+}
+assert.equal(plantingBlocks.length, 8, "one front, one rear, and six side beds form eight planting blocks");
+assert.equal(new Set(plantingBlocks.map((block) => Math.round(block.centerAngle * 1e6))).size, 8, "planting blocks have distinct evenly spaced centers");
+const sortedPlantingAngles = plantingBlocks
+  .map((block) => (block.centerAngle + Math.PI * 2) % (Math.PI * 2))
+  .sort((a, b) => a - b);
+for (let index = 0; index < sortedPlantingAngles.length; index += 1) {
+  const next = sortedPlantingAngles[(index + 1) % sortedPlantingAngles.length]
+    + (index === sortedPlantingAngles.length - 1 ? Math.PI * 2 : 0);
+  near(next - sortedPlantingAngles[index], Math.PI / 4, "planting blocks are evenly spaced around the plaza");
+}
+for (const block of plantingBlocks) {
+  near(block.outerRadius, plantingBlocks[0].outerRadius, `${block.name} reaches the shared outer planting radius`);
+  near(block.halfAngle, Math.PI / 16, `${block.name} matches the shared planting-block width`);
+  near(block.outerRadius - block.innerRadius, 0.96, `${block.name} uses the shared 60% planting depth`);
+  assert.ok(block.clusters.every((cluster) => {
+    const radius = Math.hypot(...cluster.position);
+    return radius >= block.innerRadius && radius <= block.outerRadius;
+  }), `${block.name} plant roots span the soil depth`);
+}
+assert.ok(rearClusters.every((cluster) =>
+  cluster.height[0] >= 0.5 && cluster.height[1] <= 0.6),
+"rear plants are taller than in the previous layout");
 const floorFrames = baselineConfig.plaza.plantingFloorFrames;
-assert.equal(floorFrames.length, 4, "trapezoid brick frames sit between the three side beds on both sides");
+assert.equal(floorFrames.length, 8, "one trapezoid brick frame sits between each neighboring pair of planting blocks");
 for (const frame of floorFrames) {
   const frameNode = findNode(plaza, frame.name);
   assert.ok(frameNode?.geometry, `${frame.name} is visible in the paving`);
   assert.deepEqual(frameNode.material, baselineConfig.materials.tileAccent, `${frame.name} uses the dark brick accent`);
   assert.ok(frameNode.geometry.vertexCount > 0, `${frame.name} has real raised-frame geometry`);
-  const innerCenter = frame.innerContour.reduce((sum, [x, z]) => [sum[0] + x / 4, sum[1] + z / 4], [0, 0]);
+  const innerCenter = frame.innerContour.reduce((sum, [x, z]) => [
+    sum[0] + x / frame.innerContour.length,
+    sum[1] + z / frame.innerContour.length,
+  ], [0, 0]);
   assert.ok(!geometryCoversXZ(frameNode.geometry, ...innerCenter, frameNode.objectToConstruction), `${frame.name} leaves its center open as a paving motif`);
   const frameBandPoint = [
     frame.contour[0][0] * 0.1 + frame.innerContour[0][0] * 0.9,
@@ -310,6 +387,39 @@ for (const frame of floorFrames) {
   ];
   assert.ok(geometryCoversXZ(frameNode.geometry, ...frameBandPoint, frameNode.objectToConstruction), `${frame.name} has a continuous brick border`);
   assert.ok(frame.contour.some(([x, z]) => Math.hypot(x, z) > 5.5), `${frame.name} follows the outer plaza radius`);
+  assert.ok(frame.contour.length > 4, `${frame.name} has a curved edge rather than a straight trapezoid edge`);
+  for (const [x, z] of frame.contour.slice(0, 13)) {
+    near(Math.hypot(x, z), frame.outerRadius, `${frame.name} outer edge follows the circular plaza`, 1e-5);
+  }
+  const frameAngle = (frame.centerAngle + Math.PI * 2) % (Math.PI * 2);
+  const angleIndex = sortedPlantingAngles.findIndex((angle) => angle > frameAngle);
+  const previous = angleIndex > 0
+    ? sortedPlantingAngles[angleIndex - 1]
+    : angleIndex === 0 ? sortedPlantingAngles.at(-1) - Math.PI * 2 : sortedPlantingAngles.at(-1);
+  const next = angleIndex >= 0 ? sortedPlantingAngles[angleIndex] : sortedPlantingAngles[0] + Math.PI * 2;
+  near(frameAngle, (previous + next) / 2, `${frame.name} sits halfway between neighboring planting blocks`);
+  near(frame.innerRadius, 4.28, `${frame.name} retains its full inward reach`);
+  near(frame.outerRadius, plantingBlocks[0].outerRadius, `${frame.name} reaches the soil blocks at the plaza edge`);
+  near(frame.halfAngle, Math.PI / 16, `${frame.name} touches its neighboring planting blocks`);
+  near(frame.outerRadius - frame.innerRadius, 1.6, `${frame.name} is longer than the previous trapezoid layout`);
+  near(frame.halfAngle * 2, Math.PI / 8, `${frame.name} is wider than the previous trapezoid layout`);
+}
+const sectorPoint = (radius, angle) => [Math.sin(angle) * radius, Math.cos(angle) * radius];
+const normalizeAngle = (angle) => (angle + Math.PI * 2) % (Math.PI * 2);
+for (const block of plantingBlocks) {
+  const nextFrame = floorFrames.find((frame) =>
+    Math.abs(normalizeAngle(frame.centerAngle) - normalizeAngle(block.centerAngle + Math.PI / 8)) < tolerance);
+  assert.ok(nextFrame, `${block.name} has an adjacent trapezoid frame`);
+  const seamAngle = block.centerAngle + Math.PI / 16;
+  for (const [actual, expected, label] of [
+    [nextFrame.contour[0], sectorPoint(block.outerRadius, seamAngle), "outer seam"],
+    [block.contour[24], sectorPoint(block.outerRadius, seamAngle), "soil outer seam"],
+    [block.contour[25], sectorPoint(block.innerRadius, seamAngle), "soil inner seam"],
+  ]) {
+    near(actual[0], expected[0], `${block.name} ${label} X connects without a gap`, 1e-5);
+    near(actual[1], expected[1], `${block.name} ${label} Z connects without a gap`, 1e-5);
+  }
+  assert.equal(findNode(plaza, "RearRightPatchyLawn"), null, "the overlapping outer-circle lawn patch is removed");
 }
 const annularPavingNodes = plaza.children.filter((node) =>
   node.name.startsWith("PaverAnnulusTiles")
@@ -359,9 +469,9 @@ let soilRootCount = 0;
 for (const pocket of pocketSettings) {
   for (const [x, z] of pocket.contour) {
     assert.ok(Math.hypot(x, z) <= baselineConfig.plaza.outerPavingRadius, `${pocket.name} soil stays inside the circular plaza`);
-    assert.ok(Math.hypot(x, z) < curbInnerRadius - 0.15, `${pocket.name} soil stays before the dark outer curb`);
+    assert.ok(Math.hypot(x, z) <= curbInnerRadius - 0.02 + tolerance, `${pocket.name} soil reaches the outer circle just before the dark curb`);
   }
-  assert.equal(pocket.shape, "rectangle", `${pocket.name} soil stays rectangular`);
+  assert.equal(pocket.shape, "annular-sector", `${pocket.name} soil follows the shared curved planting layout`);
   const bed = findNode(planting, pocket.name);
   const soilBed = findNode(bed, `${pocket.name}SoilSurface`);
   assert.ok(soilBed?.geometry, `${pocket.name} has its own soil surface mesh`);
@@ -389,9 +499,9 @@ for (const pocket of pocketSettings) {
     `${pocket.name} soil cap sits above paving to hide joints beneath the bed`,
   );
 
-  for (const cluster of pocket.clusters) {
+  for (const [clusterIndex, cluster] of pocket.clusters.entries()) {
     const [x, z] = cluster.position;
-    const group = findNode(bed, "LeafCluster01");
+    const group = findNode(bed, `LeafCluster${String(clusterIndex + 1).padStart(2, "0")}`);
     assert.ok(group, `${pocket.name} cluster is nested in its own pocket`);
     near(group.position[1], baselineConfig.plants.soilSurfaceY, `${pocket.name} cluster root elevation`);
     near(group.rotation[1], cluster.rotationY, `${pocket.name} plant orientation follows the circular arc`);
@@ -400,8 +510,8 @@ for (const pocket of pocketSettings) {
     assert.ok(!geometryCoversXZ(outerPavingGrout.geometry, x, z, outerPavingGrout.objectToConstruction), `${pocket.name} root is clear of outer paving joints`);
     assert.ok(!annularPavingNodes.some((node) => geometryCoversXZ(node.geometry, x, z, node.objectToConstruction)), `${pocket.name} root is clear of annular tiles and joints`);
     assert.ok(
-      cluster.rootSpread <= Math.min(pocket.radialDepth, pocket.tangentialWidth) / 2,
-      `${pocket.name} root spread fits inside its rectangular soil patch`,
+      cluster.rootSpread < pocket.halfAngle * pocket.innerRadius,
+      `${pocket.name} root spread fits inside its curved soil patch`,
     );
     assert.ok(
       Math.hypot(x, z) + cluster.rootSpread + cluster.bend[1] + cluster.width[1] / 2 + baselineConfig.wind.amplitude <= curbInnerRadius,
@@ -410,39 +520,21 @@ for (const pocket of pocketSettings) {
     soilRootCount += 1;
   }
 }
+assert.equal(soilRootCount, 96, "all eight beds support their full 12-cluster planting layouts");
 const rearFirstCluster = findNode(findNode(planting, rearArcBeds[0].name), "LeafCluster01");
 assert.ok(rearFirstCluster.children.length > 0, "the rear bed has visible foliage");
 assert.ok(
-  rearFirstCluster.children.every((leafSet) =>
+  rearFirstCluster.children.filter((leafSet) => leafSet.name.startsWith("WindLeafSet")).every((leafSet) =>
     [baselineConfig.materials.leafRust, baselineConfig.materials.leafRustLight].some((material) =>
       JSON.stringify(leafSet.material) === JSON.stringify(material))),
   "rear foliage uses russet materials rather than the front bed's gold-green palette",
 );
 
-const lawn = findNode(plaza, "RearRightPatchyLawn");
-assert.ok(lawn?.geometry, "the rear-right lawn has a separate surface mesh");
-assert.deepEqual(lawn.material, baselineConfig.materials.lawn, "the rear-right lawn uses the patchy grass texture");
-const lawnPositions = constructionPositions(lawn);
-const lawnLocalY = Array.from({ length: lawn.geometry.vertexCount }, (_, index) => lawnPositions[index * 3 + 1]);
-near(worldY(scene, lawn) + Math.max(...lawnLocalY), baselineConfig.plaza.islandLawnTopY, "patchy lawn top follows the planting level");
-near(worldY(scene, lawn) + Math.min(...lawnLocalY), baselineConfig.plaza.groundTopY, "patchy lawn base meets the ground");
-const lawnSample = [3.2, -3.1];
-const lawnAnnulusSample = [3.8, -2.5];
-assert.ok(geometryCoversXZ(lawn.geometry, ...lawnSample, lawn.objectToConstruction), "the patchy lawn covers its configured rear-right sample");
-assert.ok(!geometryCoversXZ(outerPavingTiles.geometry, ...lawnSample, outerPavingTiles.objectToConstruction), "paving leaves a real opening for the patchy lawn");
-assert.ok(!annularPavingNodes.some((node) => geometryCoversXZ(node.geometry, ...lawnSample, node.objectToConstruction)), "annular pavers do not mask the lawn");
-assert.ok(geometryCoversXZ(lawn.geometry, ...lawnAnnulusSample, lawn.objectToConstruction), "the lawn continues into its configured overlap with the circular band");
-assert.ok(!geometryCoversXZ(outerPavingTiles.geometry, ...lawnAnnulusSample, outerPavingTiles.objectToConstruction), "the lawn opening also cuts through the shaped outer field");
-assert.ok(!annularPavingNodes.some((node) => geometryCoversXZ(node.geometry, ...lawnAnnulusSample, node.objectToConstruction)), "annular pavers leave a true opening where the lawn crosses their radius");
-for (const [x, z] of baselineConfig.plaza.lawnFootprint) {
-  assert.ok(Math.hypot(x, z) <= baselineConfig.plaza.outerPavingRadius, "the lawn stays inside the circular plaza");
-}
-for (const [x, z] of baselineConfig.plants.redTuftPositions) {
-  assert.ok(Math.hypot(x, z) + 0.56 <= baselineConfig.plaza.outerPavingRadius, "russet plants and their leaves stay inside the circular plaza");
-}
-for (const [x, z] of baselineConfig.plants.shrubPositions) {
-  assert.ok(Math.hypot(x, z) + 0.9 <= baselineConfig.plaza.outerPavingRadius, "shrubs stay inside the circular plaza");
-}
+assert.ok(geometryCoversXZ(outerPavingTiles.geometry, 2.6, -2.8, outerPavingTiles.objectToConstruction)
+  || annularPavingNodes.some((node) => geometryCoversXZ(node.geometry, 2.6, -2.8, node.objectToConstruction)),
+"paving covers the former overlapping lawn area without a hole");
+assert.equal(planting.children.some((node) => node.name.startsWith("RussetTuft")), false, "detached russet tufts do not interrupt the connected planting layout");
+assert.equal(planting.children.some((node) => node.name.startsWith("VariegatedLowShrub")), false, "outer-circle green bushes are removed");
 
 const curbSegments = plaza.children.filter((node) => node.name.startsWith("OuterCircularCurb"));
 assert.ok(curbSegments.length > 80, "the circular outer curb follows the plaza edge while leaving the planting beds open");
@@ -662,8 +754,7 @@ process.stdout.write(JSON.stringify({
     plantingPocketCount: soilPocketNodes.length,
     supportedPlantRoots: soilRootCount,
     annularRows: baselineConfig.plaza.paverRows,
-    patchyLawnSample: lawnSample,
-    lawnAnnulusSample,
+    formerLawnPavingSample: [2.6, -2.8],
     outerCurbSegments: curbSegments.length,
     curbHeightAboveGround: outerCurbTopY - baselineConfig.plaza.groundTopY,
   },

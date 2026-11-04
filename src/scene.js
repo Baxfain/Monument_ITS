@@ -2,6 +2,7 @@ import { CONFIG, deriveMonumentLayout } from "./config.js";
 import {
   createBoxGeometry,
   createCircleContour,
+  createCylinderGeometry,
   createDiscGeometry,
   createExtrudedPolygonFieldGeometry,
   createExtrudedContourGeometry,
@@ -120,10 +121,7 @@ function addOuterPaving(plaza) {
   const rowWidth = (settings.paverOuterRadius - settings.paverInnerRadius) / settings.paverRows;
   const innerPaverContour = createCircleContour(settings.paverInnerRadius, 128);
   const outerPaverContour = createCircleContour(settings.paverOuterRadius, 128);
-  const openings = [
-    ...C.plants.plantingPockets.map((pocket) => pocket.contour),
-    settings.lawnFootprint,
-  ];
+  const openings = C.plants.plantingPockets.map((pocket) => pocket.contour);
 
   for (let row = 0; row < settings.paverRows; row += 1) {
     const boundaryInner = settings.paverInnerRadius + rowWidth * row;
@@ -200,7 +198,6 @@ function addOuterPaving(plaza) {
     outerPaverContour,
     innerPaverContour,
     ...C.plants.plantingPockets.map((pocket) => pocket.contour),
-    settings.lawnFootprint,
   ];
   const joints = gridJointContours(settings.outerPavingOutline, outerHoles, settings.outerPavingTilePitch, settings.outerPavingJointWidth);
   const tiles = createExtrudedPolygonFieldGeometry(settings.outerPavingOutline, [...outerHoles, ...joints.contours], thickness);
@@ -230,7 +227,6 @@ function addSegmentedOuterCurb(plaza, boxGeometry) {
   const points = settings.outerPavingOutline;
   const plantingOpenings = [
     ...C.plants.plantingPockets.map((pocket) => pocket.contour),
-    settings.lawnFootprint,
   ];
   const signedArea = points.reduce((sum, point, index) => {
     const next = points[(index + 1) % points.length];
@@ -278,20 +274,6 @@ function addPlaza(root, boxGeometry) {
 
   const gravel = createDiscGeometry(C.plaza.gravelRadius, 72);
   plaza.add(mesh("CircularGravelBed", gravel, C.materials.gravel, [0, 0.055, 0], [1, 1, 1], [0, 0, 0], { surface: true }));
-
-  plaza.add(mesh(
-    "RearRightPatchyLawn",
-    createExtrudedPolygonFieldGeometry(
-      C.plaza.lawnFootprint,
-      [],
-      C.plaza.islandLawnTopY - C.plaza.groundTopY,
-    ),
-    C.materials.lawn,
-    [0, (C.plaza.islandLawnTopY + C.plaza.groundTopY) / 2, 0],
-    [1, 1, 1],
-    [0, 0, 0],
-    { surface: true },
-  ));
 
   const curb = createRingPrismGeometry(C.plaza.curbInnerRadius, C.plaza.curbOuterRadius, C.plaza.curbHeight, 72);
   plaza.add(mesh("RaisedCircularCurb", curb, C.materials.curb, [0, 0.105, 0], [1, 1, 1], [0, 0, 0], { solid: true, surface: true, shape: "annulus" }));
@@ -567,6 +549,7 @@ function makeLeafBuckets(count, random, settings) {
       width: settings.width[0] + random() * (settings.width[1] - settings.width[0]),
       bend: settings.bend[0] + random() * (settings.bend[1] - settings.bend[0]),
       phase: random() * Math.PI * 2,
+      baseHeight: settings.baseHeight ?? 0,
     });
   }
   return buckets;
@@ -578,6 +561,9 @@ function addBladedPlantGroups(root) {
   const density = Math.max(0, Math.min(2, settings.density));
   const goldBladeMaterials = [C.materials.leafGold, C.materials.leafLime, C.materials.leafGreen];
   const rustBladeMaterials = [C.materials.leafRustLight, C.materials.leafRust, C.materials.leafRust];
+  const shrubBladeMaterials = [C.materials.leafGreen, C.materials.leafCream, C.materials.leafLime];
+  const darkSpreadBladeMaterials = [C.materials.leafDeepGreen, C.materials.leafDeepGreen, C.materials.leafDeepGreen];
+  const plantStemGeometry = createCylinderGeometry(0.5, 0.34, 1, 8);
 
   settings.plantingPockets.forEach((pocket, pocketIndex) => {
     const bed = planting.add(new SceneNode({ name: pocket.name }));
@@ -600,65 +586,38 @@ function addBladedPlantGroups(root) {
       }));
       const random = seededRandom(settings.seed + pocketIndex * 104729 + clusterIndex * 27011);
       const isRustPlant = cluster.species === "rust";
+      const isDarkSpreadPlant = cluster.species === "dark-spread";
+      const isShrubPlant = cluster.species === "variegated-shrub";
+      if (cluster.stem) {
+        const stemHeight = (cluster.stem.height[0] + cluster.stem.height[1]) / 2;
+        group.add(mesh(
+          "PlantStem",
+          plantStemGeometry,
+          C.materials.plantStem,
+          [0, stemHeight / 2, 0],
+          [cluster.stem.radius * 2, stemHeight, cluster.stem.radius * 2],
+        ));
+      }
       const buckets = makeLeafBuckets(Math.round(cluster.leaves * density), random, {
         rootSpread: cluster.rootSpread,
         height: cluster.height,
         width: cluster.width ?? (isRustPlant ? [0.04, 0.075] : [0.055, 0.105]),
         bend: cluster.bend ?? (isRustPlant ? [0.1, 0.34] : [0.18, 0.54]),
-        goldShare: isRustPlant ? 0.48 : 0.42,
-        limeShare: isRustPlant ? 0.32 : 0.4,
+        baseHeight: cluster.leafBaseHeight,
+        goldShare: isDarkSpreadPlant ? 1 : isShrubPlant ? 0.46 : isRustPlant ? 0.48 : 0.42,
+        limeShare: isShrubPlant ? 0.34 : isRustPlant ? 0.32 : 0.4,
       });
       buckets.forEach((leaves, colorIndex) => {
         if (leaves.length === 0) return;
-        const materials = isRustPlant ? rustBladeMaterials : goldBladeMaterials;
+        const materials = isRustPlant
+          ? rustBladeMaterials
+          : isDarkSpreadPlant ? darkSpreadBladeMaterials
+            : isShrubPlant ? shrubBladeMaterials : goldBladeMaterials;
         group.add(mesh(`WindLeafSet${colorIndex + 1}`, createLeafClusterGeometry(leaves), materials[colorIndex]));
       });
     });
   });
 
-  settings.redTuftPositions.forEach(([x, z], index) => {
-    const group = planting.add(new SceneNode({
-      name: `RussetTuft${String(index + 1).padStart(2, "0")}`,
-      position: [x, C.plaza.islandLawnTopY, z],
-    }));
-    const random = seededRandom(settings.seed + 700001 + index * 13007);
-    const buckets = makeLeafBuckets(Math.round(settings.redLeavesPerTuft * density), random, {
-      rootSpread: 0.16,
-      height: [0.52, 0.88],
-      width: [0.035, 0.068],
-      bend: [0.09, 0.24],
-      goldShare: 0.46,
-      limeShare: 0.18,
-    });
-    if (buckets[0].length > 0) {
-      group.add(mesh("ReddishNarrowLeaves", createLeafClusterGeometry(buckets[0]), C.materials.leafRustLight));
-    }
-    const darkerLeaves = buckets[1].concat(buckets[2]);
-    if (darkerLeaves.length > 0) {
-      group.add(mesh("DeepRustLeaves", createLeafClusterGeometry(darkerLeaves), C.materials.leafRust));
-    }
-  });
-
-  const shrubGeometry = createSphereGeometry(12, 8);
-  settings.shrubPositions.forEach(([x, z], index) => {
-    const group = planting.add(new SceneNode({
-      name: `VariegatedLowShrub${String(index + 1).padStart(2, "0")}`,
-      position: [x, settings.soilSurfaceY, z],
-    }));
-    const random = seededRandom(settings.seed + 900001 + index * 16381);
-    for (let lump = 0; lump < 8; lump += 1) {
-      const angle = random() * Math.PI * 2;
-      const radius = Math.sqrt(random()) * 0.42;
-      const pale = random() > 0.55;
-      group.add(mesh(
-        `ShrubLeafMass${lump + 1}`,
-        shrubGeometry,
-        pale ? C.materials.shrubVariegated : C.materials.shrub,
-        [Math.cos(angle) * radius, 0.18 + random() * 0.14, Math.sin(angle) * radius],
-        [0.44 + random() * 0.22, 0.28 + random() * 0.18, 0.38 + random() * 0.2],
-      ));
-    }
-  });
   return planting;
 }
 

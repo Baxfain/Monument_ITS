@@ -31,6 +31,30 @@ function finish(buffers) {
   };
 }
 
+export function createCylinderGeometry(bottomRadius = 0.5, topRadius = 0.35, height = 1, segments = 8) {
+  const buffers = createBuffers();
+  const halfHeight = height / 2;
+  for (let index = 0; index < segments; index += 1) {
+    const angle0 = (index / segments) * Math.PI * 2;
+    const angle1 = ((index + 1) / segments) * Math.PI * 2;
+    const point = (radius, angle, y) => [Math.cos(angle) * radius, y, Math.sin(angle) * radius];
+    const bottom0 = point(bottomRadius, angle0, -halfHeight);
+    const bottom1 = point(bottomRadius, angle1, -halfHeight);
+    const top0 = point(topRadius, angle0, halfHeight);
+    const top1 = point(topRadius, angle1, halfHeight);
+    const middle = (angle0 + angle1) / 2;
+    const slope = bottomRadius - topRadius;
+    const normalLength = Math.hypot(Math.cos(middle), slope / height, Math.sin(middle));
+    const normal = [
+      Math.cos(middle) / normalLength,
+      (slope / height) / normalLength,
+      Math.sin(middle) / normalLength,
+    ];
+    pushQuad(buffers, bottom0, top0, top1, bottom1, normal);
+  }
+  return finish(buffers);
+}
+
 export function createBoxGeometry(dimensions = [1, 1, 1], { omitTopFace = false } = {}) {
   const buffers = createBuffers();
   const uvFor = (point, axes) => [
@@ -865,7 +889,7 @@ export function createLeafClusterGeometry(leaves, longitudinalSegments = 12, cro
         * (0.15 + 0.85 * Math.sin(t * Math.PI * 0.82))
         * Math.pow(Math.max(0, 1 - t), 0.48);
       const bend = leaf.bend * easedT;
-      const height = leaf.height * (t - 0.06 * t * t);
+      const height = (leaf.baseHeight ?? 0) + leaf.height * (t - 0.06 * t * t);
       const rowVertices = [];
 
       for (let column = 0; column <= crossSegments; column += 1) {
