@@ -1,0 +1,161 @@
+{
+  "method": "8x8 RGB medians from local source photographs; texture detail is generated with deterministic tileable noise and veins.",
+  "samples": {
+    "stone": {
+      "source": "assets/reference/front-plaque.jpeg",
+      "center_pixel": [
+        710,
+        300
+      ],
+      "patch_size": "8x8",
+      "median_rgb": [
+        94,
+        87,
+        88
+      ]
+    },
+    "cap": {
+      "source": "assets/reference/front-plaque.jpeg",
+      "center_pixel": [
+        700,
+        240
+      ],
+      "patch_size": "8x8",
+      "median_rgb": [
+        30,
+        31,
+        35
+      ]
+    },
+    "plinth": {
+      "source": "assets/reference/front-plaque.jpeg",
+      "center_pixel": [
+        650,
+        470
+      ],
+      "patch_size": "8x8",
+      "median_rgb": [
+        82,
+        78,
+        77
+      ]
+    },
+    "tile": {
+      "source": "assets/reference/front-plaque.jpeg",
+      "center_pixel": [
+        520,
+        480
+      ],
+      "patch_size": "8x8",
+      "median_rgb": [
+        162,
+        162,
+        162
+      ]
+    },
+    "gravel": {
+      "source": "assets/reference/front-plaque.jpeg",
+      "center_pixel": [
+        350,
+        500
+      ],
+      "patch_size": "8x8",
+      "median_rgb": [
+        157,
+        156,
+        154
+      ]
+    },
+    "curb": {
+      "source": "assets/reference/oblique-plaza.jpeg",
+      "center_pixel": [
+        790,
+        816
+      ],
+      "patch_size": "8x8",
+      "median_rgb": [
+        167,
+        167,
+        167
+      ]
+    },
+    "ground": {
+      "source": "assets/reference/planting.jpeg",
+      "center_pixel": [
+        1450,
+        780
+      ],
+      "patch_size": "8x8",
+      "median_rgb": [
+        99,
+        106,
+        53
+      ]
+    },
+    "navy": {
+      "source": "assets/reference/emblem-detail.jpeg",
+      "center_pixel": [
+        580,
+        220
+      ],
+      "patch_size": "8x8",
+      "median_rgb": [
+        54,
+        70,
+        121
+      ]
+    },
+    "cyan": {
+      "source": "assets/reference/emblem-detail.jpeg",
+      "center_pixel": [
+        940,
+        220
+      ],
+      "patch_size": "8x8",
+      "median_rgb": [
+        97,
+        143,
+        170
+      ]
+    },
+    "lotus": {
+      "source": "assets/reference/emblem-detail.jpeg",
+      "center_pixel": [
+        765,
+        270
+      ],
+      "patch_size": "8x8",
+      "median_rgb": [
+        158,
+        153,
+        69
+      ]
+    },
+    "torch": {
+      "source": "assets/reference/emblem-detail.jpeg",
+      "center_pixel": [
+        760,
+        70
+      ],
+      "patch_size": "8x8",
+      "median_rgb": [
+        107,
+        118,
+        134
+      ]
+    },
+    "leaf": {
+      "source": "assets/reference/planting.jpeg",
+      "center_pixel": [
+        600,
+        700
+      ],
+      "patch_size": "8x8",
+      "median_rgb": [
+        164,
+        137,
+        37
+      ]
+    }
+  }
+}

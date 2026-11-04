@@ -1,0 +1,11 @@
+{
+  "name": "grakoms-webgl2",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "check:layout": "node scripts/verify_layout.mjs",
+    "check:physics": "node scripts/verify_physics.mjs",
+    "check:landing": "node scripts/verify_solid_landing.mjs",
+    "check:look": "node scripts/verify_look_input.mjs"
+  }
+}
