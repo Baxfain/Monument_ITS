@@ -1,0 +1,161 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="theme-color" content="#172638">
+    <meta name="description" content="Compare the interactive ITS monument scene with its supplied photo and video references.">
+    <link rel="icon" href="data:,">
+    <title>ITS TW 2</title>
+    <link rel="stylesheet" href="./styles.css">
+    <script type="module" src="./src/app.js"></script>
+  </head>
+  <body>
+    <header class="masthead">
+      <div class="masthead-copy">
+        <p><b>ITS Tower 2</b></p>
+      </div>
+    </header>
+
+    <main id="comparison">
+      <section class="comparison" aria-label="Interactive scene and source references">
+        <article class="pane pane--model" aria-labelledby="scene-heading">
+          <div class="pane-heading">
+            <div>
+              <h2 id="scene-heading">Replication by:</h2>
+              <p class="eyebrow">Severinus Fabian Tanuwidjaja (5025241110) | Steven Alvin Christian (5025241116)</p>
+            </div>
+            <span class="model-badge">Interactive</span>
+          </div>
+          <div class="visual-frame canvas-frame">
+            <canvas id="scene-canvas" tabindex="0" aria-label="Interactive first-person WebGL2 scene of the ITS monument">
+              WebGL2 is unavailable in this browser.
+            </canvas>
+            <output class="coordinate-hud" id="camera-position" aria-label="Camera eye position in scene units" aria-live="off">X 0.00 · Y 0.00 · Z 0.00</output>
+          </div>
+          <nav class="view-presets" aria-label="Comparison camera views">
+            <span class="control-label">View</span>
+            <button class="preset-button" data-camera-preset="front" type="button" aria-pressed="true">Front</button>
+            <button class="preset-button" data-camera-preset="threeQuarter" type="button" aria-pressed="false">Three-quarter</button>
+            <button class="preset-button" data-camera-preset="profile" type="button" aria-pressed="false">Profile</button>
+            <button class="preset-button" data-camera-preset="rear" type="button" aria-pressed="false">Rear</button>
+          </nav>
+          <div class="wind-controls" aria-label="Wind controls">
+            <span class="control-label">Wind</span>
+            <div class="wind-arrows" role="group" aria-label="Set wind direction in world coordinates">
+              <button class="wind-arrow wind-arrow--up" data-wind-x="0" data-wind-z="-1" type="button" aria-label="Wind toward world negative Z" aria-pressed="true">↑</button>
+              <button class="wind-arrow wind-arrow--right" data-wind-x="1" data-wind-z="0" type="button" aria-label="Wind toward world positive X" aria-pressed="false">→</button>
+              <button class="wind-arrow wind-arrow--down" data-wind-x="0" data-wind-z="1" type="button" aria-label="Wind toward world positive Z" aria-pressed="false">↓</button>
+              <button class="wind-arrow wind-arrow--left" data-wind-x="-1" data-wind-z="0" type="button" aria-label="Wind toward world negative X" aria-pressed="false">←</button>
+            </div>
+            <button class="wind-toggle" id="toggle-wind" type="button" aria-pressed="false">Pause</button>
+            <output class="wind-direction" id="wind-direction" aria-live="polite">−Z</output>
+          </div>
+          <div class="walk-controls">
+            <button class="button button--primary" id="start-walk" type="button">Walk scene</button>
+            <p class="walk-hint"><kbd>WASD</kbd> move <kbd>Shift</kbd> sprint <kbd>C</kbd> crouch <kbd>Space</kbd> jump</p>
+          </div>
+        </article>
+
+        <article class="pane pane--reference" aria-labelledby="reference-heading">
+          <div class="pane-heading">
+            <div>
+              <p class="eyebrow">Supplied references</p>
+              <h2 id="reference-heading">Source view</h2>
+            </div>
+            <label class="select-field" for="reference-select">
+              <span class="sr-only">Choose a reference photo or video</span>
+              <select id="reference-select" name="reference">
+                <option value="front">Front photo</option>
+                <option value="oblique">Three-quarter photo</option>
+                <option value="profile">Profile photo</option>
+                <option value="rear">Rear photo</option>
+                <option value="emblem">Emblem detail photo</option>
+                <option value="planting">Planting detail photo</option>
+                <option value="video">Front approach video</option>
+              </select>
+            </label>
+          </div>
+          <figure class="visual-frame reference-frame">
+            <img id="reference-photo" src="./assets/reference/front-plaque.jpeg" width="1599" height="899" alt="Front view of the ITS monument, plaque face and plaza">
+            <video id="reference-video" class="reference-video" controls preload="metadata" poster="./assets/reference/front-plaque.jpeg" hidden>
+              <source src="./assets/reference/front-approach.mp4" type="video/mp4">
+              Your browser cannot play this supplied MP4.
+            </video>
+            <figcaption class="frame-tag" id="reference-caption">Front view · supplied photograph</figcaption>
+          </figure>
+        </article>
+      </section>
+
+      <section class="project-details" aria-labelledby="contributions-heading">
+        <header class="details-heading">
+          <p class="eyebrow">Team</p>
+          <h2 id="contributions-heading">Kontribusi</h2>
+        </header>
+        <div class="contributor-grid" lang="id">
+          <article class="contributor-card">
+            <h3>Severinus Fabian Tanuwidjaja (5025241110)</h3>
+            <ol type="a">
+              <li>Membuat base bawah monumen</li>
+              <li>Membuat tanaman, tanah, dan batas dari blok-bloknya</li>
+              <li>Mengimplementasi fitur pergerakan kamera (player)</li>
+            </ol>
+          </article>
+          <article class="contributor-card">
+            <h3>Steven Alvin Christian (5025241116)</h3>
+            <ol type="a">
+              <li>Membuat tugu logo ITS</li>
+              <li>Membuat world beserta isi di luar area monumen</li>
+              <li>Mengimplementasi fitur angin</li>
+            </ol>
+          </article>
+        </div>
+      </section>
+
+      <section class="scene-structure" aria-labelledby="scene-structure-heading">
+        <header class="details-heading">
+          <h2 id="scene-structure-heading">Hierarki objek tanaman</h2>
+        </header>
+        <div class="plant-hierarchy">
+          <svg class="plant-diagram" viewBox="0 0 760 420" role="img" aria-labelledby="plant-tree-title plant-tree-description">
+            <title id="plant-tree-title">Hierarki objek tanaman</title>
+            <desc id="plant-tree-description">PlantingGroups memiliki area tanam. Area tanam memiliki SoilSurface dan LeafCluster. LeafCluster memiliki PlantStem dan WindLeafSet.</desc>
+            <g class="plant-links" fill="none">
+              <path d="M392 78 V108" />
+              <path d="M392 180 V210 H124 Q114 210 114 220 V240" />
+              <path d="M392 210 H474 Q484 210 484 220 V240" />
+              <path d="M484 290 V320 H330 Q320 320 320 330 V350" />
+              <path d="M484 320 H574 Q584 320 584 330 V350" />
+            </g>
+            <g class="plant-box plant-box--root">
+              <rect x="312" y="28" width="160" height="50" />
+              <text x="392" y="53">PlantingGroups</text>
+            </g>
+            <g class="plant-box">
+              <rect x="202" y="108" width="380" height="72" />
+              <text x="392" y="133">Area tanam</text>
+              <text class="plant-box-note" x="392" y="156">FrontArcSoilBed · RearArcSoilBed · SidePlantBlock01–06</text>
+            </g>
+            <g class="plant-box">
+              <rect x="34" y="240" width="160" height="50" />
+              <text x="114" y="265">SoilSurface</text>
+            </g>
+            <g class="plant-box">
+              <rect x="398" y="240" width="172" height="50" />
+              <text x="484" y="265">LeafCluster01 … n</text>
+            </g>
+            <g class="plant-box">
+              <rect x="232" y="350" width="176" height="50" />
+              <text x="320" y="375">PlantStem <tspan class="plant-box-note">(opsional)</tspan></text>
+            </g>
+            <g class="plant-box">
+              <rect x="432" y="350" width="304" height="50" />
+              <text x="584" y="375">WindLeafSet1–3 <tspan class="plant-box-note">(sesuai kelompok daun)</tspan></text>
+            </g>
+          </svg>
+        </div>
+      </section>
+    </main>
+    <noscript><p class="noscript-message">JavaScript modules are required for the interactive scene.</p></noscript>
+  </body>
+</html>
